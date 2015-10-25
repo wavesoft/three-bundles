@@ -80,6 +80,11 @@ define(["three", "three-bundles/utils", "three-bundles/parsers"], function(THREE
         			// Meshes and Objects
         			// -------------------------
 
+                    // Load Geometries
+                    if (bundleIndex['geometry'])
+                        for (var i=0; i<bundleIndex.geometry.length; i++) {
+                            requirements.push( "geometry!" + name + '/' + bundleIndex.geometry[i] );
+                        }
         			// Load Meshes
         			if (bundleIndex['mesh'])
         				for (var i=0; i<bundleIndex.mesh.length; i++) {

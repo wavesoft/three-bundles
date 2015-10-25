@@ -4,10 +4,6 @@
  */
 define(["three", "three-bundles/utils", "three-bundles/parsers"], function(THREE, Utils, Parsers) {
 
-	// Create a couple of loaders that we are going to use
-	var OBJloader = new THREE.OBJLoader(),
-		BUFGEOMloader = new THREE.BufferGeometryLoader();
-
     // Return definition
     return {
 

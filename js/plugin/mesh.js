@@ -54,10 +54,26 @@ define(["three", "three-bundles/utils", "three-bundles/parsers", "three-bundles/
 				// Prepare an image loader
 				var loader = new THREE.OBJLoader();
 				loader.setCrossOrigin( crossOrigin );
-				loader.load( url, function ( mesh ) {
+				loader.load( req.toUrl(url), function ( mesh ) {
 
-					// We are now loaded
-					onload( mesh );
+					// Dynamically load materials using material name as the lookup key
+					var matNames = [];
+					for (var i=0; i<mesh.children.length; i++) {
+						matNames.push( Utils.expandModuleURL("material!" + mesh.children[i].material.name, moduleName) );
+					}
+
+					// Load materials
+					req(matNames, function(/* Materials */) {
+
+						// Assign materials
+						for (var i=0; i<matNames.length; i++) {
+							mesh.children[i].material = arguments[i];
+						}
+
+						// We are now loaded
+						onload( mesh );
+
+					});
 
 				}, function() { /* Progress */ }, function(error) {
 
@@ -74,7 +90,7 @@ define(["three", "three-bundles/utils", "three-bundles/parsers", "three-bundles/
 				// Prepare an image loader
 				var loader = new THREE.ColladaLoader();
 				loader.setCrossOrigin( crossOrigin );
-				loader.load( url, function ( mesh ) {
+				loader.load( req.toUrl(url), function ( mesh ) {
 
 					// We are now loaded
 					onload( mesh );

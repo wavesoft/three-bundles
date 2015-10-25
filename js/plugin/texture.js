@@ -13,7 +13,7 @@ define(["three", "three-bundles/utils", "three-bundles/parsers", "three-bundles/
 			var parts = name.split("/"),
 				moduleName = parts.shift(),
 				filePath = parts.join("/"),
-				url = req.toUrl(moduleName + "/texture/" + filePath);
+				url = moduleName + "/texture/" + filePath;
 
 			// Handle files according to format
 			if (Utils.matchesExt(name, ["jpg", "jpeg", "png", "bmp", "gif"])) {
@@ -24,7 +24,7 @@ define(["three", "three-bundles/utils", "three-bundles/parsers", "three-bundles/
 				// Prepare an image loader
 				var loader = new THREE.ImageLoader();
 				loader.setCrossOrigin( crossOrigin );
-				loader.load( url, function ( image ) {
+				loader.load( req.toUrl(url), function ( image ) {
 
 					// Create texture
 					var texture = new THREE.Texture( image );
@@ -48,7 +48,7 @@ define(["three", "three-bundles/utils", "three-bundles/parsers", "three-bundles/
 				// Prepare an image loader
 				var loader = new THREE.DDSLoader();
 				loader.setCrossOrigin( crossOrigin );
-				loader.load( url, function ( texture ) {
+				loader.load( req.toUrl(url), function ( texture ) {
 
 					// We are now loaded
 					onload( texture );

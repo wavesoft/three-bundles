@@ -48,7 +48,7 @@ define(["three", "three-bundles/utils", "three-bundles/parsers"], function(THREE
 
 			} else if (Utils.matchesExt(name, "obj")) {
 
-
+				onload.error("OBJ not yet supported");
 
 			} else {
 

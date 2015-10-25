@@ -15,30 +15,40 @@ define(["three", "three-bundles/utils", "three-bundles/parsers"], function(THREE
 				filePath = parts.join("/"),
 				url = moduleName + "/object/" + filePath;
 
-			// Require THREE.js runtime, and load shader contents as text
-			req(["three", "text!"+url], function( THREE, objectJSON ) {
+			// Handle files according to format
+			if (Utils.matchesExt(name, "json")) {
 
-				// Parse JSON & Create Object
-				var json = JSON.parse( objectJSON ),
-					object = new THREE.Object3D();
+				// Require THREE.js runtime, and load shader contents as text
+				req(["three", "text!"+url], function( THREE, objectJSON ) {
 
-				// Collect requirements
-				
+					// Parse JSON & Create Object
+					var json = JSON.parse( objectJSON ),
+						object = new THREE.Object3D();
 
-				// Collect meshes
-				if (json.meshes) {
-					for (var i=0; i<json.meshes.length; i++) {
+					// Collect requirements
+					
 
+					// Collect meshes
+					if (json.meshes) {
+						for (var i=0; i<json.meshes.length; i++) {
+
+						}
 					}
-				}
 
 
-	    	}, function( error ) {
+		    	}, function( error ) {
 
-				// Pass-through error
-	    		onload.error(error);
+					// Pass-through error
+		    		onload.error(error);
 
-	    	});
+		    	});
+
+		    } else {
+
+				// We don't know how to handle this
+				onload.error("Unknown object format");
+
+		    }
 
 	    }
 	};

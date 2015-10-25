@@ -52,7 +52,7 @@ require.config({
 })
 ```
 
-You should then load the `three-bundles` package later in your project in order to activate the bundles functionality.
+__IMPORTANT__: You must load the `three-bundles` package later in your project in order to activate the bundles functionality.
 
 ## Usage
 

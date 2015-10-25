@@ -139,9 +139,9 @@ def enumResources(baseDir):
 		'mesh'	 	: ["json", "js", "obj"],
 		'object' 	: ["json"],
 		'scene' 	: ["json"],
-		'shader' 	: ["json", "shader"],
+		'shader' 	: ["txt", "shader"],
 		'sound' 	: ["mp3", "ogg", "wav"],
-		'texture' 	: ["jpg", "jpeg", "bmp", "gif", "jpg", "dds"],
+		'texture' 	: ["jpg", "png", "jpeg", "bmp", "gif", "dds"],
 		'js'		: ["js"],
 	}
 

@@ -15,37 +15,52 @@ define(["three", "three-bundles/utils", "three-bundles/parsers"], function(THREE
 				filePath = parts.join("/"),
 				url = req.toUrl(moduleName + "/texture/" + filePath);
 
-			// Require THREE.js runtime
-			req(["three"], function(THREE) {
+			// Handle files according to format
+			if (Utils.matchesExt(name, ["jpg", "jpeg", "png", "bmp", "gif"])) {
 
-				// Get defaults for cross-origin
-				var crossOrigin = config.crossOrigin || false;
+				// Require THREE.js runtime
+				req(["three"], function(THREE) {
 
-				// Prepare an image loader
-				var loader = new THREE.ImageLoader();
-				loader.setCrossOrigin( crossOrigin );
-				loader.load( url, function ( image ) {
+					// Get defaults for cross-origin
+					var crossOrigin = config.crossOrigin || false;
 
-					// Create texture
-					var texture = new THREE.Texture( image );
-					texture.needsUpdate = true;
+					// Prepare an image loader
+					var loader = new THREE.ImageLoader();
+					loader.setCrossOrigin( crossOrigin );
+					loader.load( url, function ( image ) {
 
-					// We are now loaded
-					onload( texture );
+						// Create texture
+						var texture = new THREE.Texture( image );
+						texture.needsUpdate = true;
 
-				}, function() { /* Progress */ }, function(error) {
+						// We are now loaded
+						onload( texture );
 
-					// There is an error
-					onload.error(Error("Unable to load texture " + name));
+					}, function() { /* Progress */ }, function(error) {
+
+						// There is an error
+						onload.error(Error("Unable to load texture " + name));
+
+					});
+
+				}, function(error) {
+
+					// Pass-through error
+					onload.error(error);
 
 				});
 
-			}, function(error) {
+			} else if (Utils.matchesExt(name, "dds")) {
 
-				// Pass-through error
-				onload.error(error);
+				// We don't know how to handle this
+				onload.error("Compressed texture not yet supported");
 
-			});
+			} else {
+
+				// We don't know how to handle this
+				onload.error("Unknown texture format");
+
+			}
 
 		}
 		

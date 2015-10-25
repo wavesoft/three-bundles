@@ -15,18 +15,28 @@ define(["three", "three-bundles/utils", "three-bundles/parsers"], function(THREE
 				filePath = parts.join("/"),
 				url = moduleName + "/shader/" + filePath;
 
-			// Require THREE.js runtime, and load shader contents as text
-			req(["three", "text!"+url], function( THREE, shaderText ) {
+			// Handle files according to format
+			if (Utils.matchesExt(name, ["shader", "txt"])) {
 
-				// Callback with shader text text
-				onload(shaderText);
+				// Require THREE.js runtime, and load shader contents as text
+				req(["three", "text!"+url], function( THREE, shaderText ) {
 
-	    	}, function( error ) {
+					// Callback with shader text text
+					onload(shaderText);
 
-				// Pass-through error
-	    		onload.error(error);
+		    	}, function( error ) {
 
-	    	});
+					// Pass-through error
+		    		onload.error(error);
+
+		    	});
+
+		    } else {
+
+				// We don't know how to handle this
+				onload.error("Unknown shader format");
+
+		    }
 
 	    }
 	};

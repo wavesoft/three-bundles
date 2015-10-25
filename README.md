@@ -6,6 +6,12 @@ THREE Bundles is a [Require.js](http://requirejs.org/) package that provides dyn
 
 In addition it suggests a way of organizing your resources in reusable `bundles` that can be quickly and optimally loaded in your scene.
 
+## Requirements
+
+ * __Require.js__
+ * __THREE.js__ (aliased `three` in require.js)
+ * __text.js__ (from https://github.com/requirejs/text)
+
 ## Installing 
 
 You can include THREE Bundles to your Require.js project with the following configuration:

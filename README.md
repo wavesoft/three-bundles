@@ -2,7 +2,9 @@
 
 <img src="https://github.com/wavesoft/three-bundles/raw/master/doc/icon.png" align="left" alt="THREE Bundles" />
 
-THREE Bundles is a [Require.js](http://requirejs.org/) package that provides dynamic content loading for various [THREE.js](http://threejs.org/) resources. It organises them in reusable bundles of files, and offers a simple and lightweight mechanism for addressing them.
+THREE Bundles is a [Require.js](http://requirejs.org/) package that provides dynamic content loading for various [THREE.js](http://threejs.org/) resources. It offers a simple mechanism for addressing and loading them through Require.js as native dependencies.
+
+In addition it suggests a way of organizing your resources in reusable `bundles` that can be quickly and optimally loaded in your scene.
 
 ## Installing 
 
@@ -48,9 +50,22 @@ You should then load the `three-bundles` package later in your project in order 
 
 ## Usage
 
-THREE Bundles provide a set of Require.js plug-ins for loading various THREE.js resources. According to the plugin and the filename extension a different THREE.js object is created.
+THREE Bundles provide a set of Require.js plug-ins for loading various THREE.js resources. You only need to add the dependency, and the appropriate object will be created for you.
 
-The following table summarises the available modules:
+```javascript
+define(["mesh!path/to/mesh.json"], function(mesh) {
+    ...
+    // Add the mesh to your scene
+    scene.add( mesh );
+    ...
+});
+```
+
+For more details check to the the `Reference` section below.
+
+## Reference
+
+According to the plugin and the filename extension, a different THREE.js object is created. The following table summarises the available modules:
 
 <table>
     <tr>

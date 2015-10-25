@@ -2,7 +2,7 @@
 
 <img src="https://github.com/wavesoft/three-bundles/raw/master/doc/icon.png" align="left" alt="THREE Bundles" />
 
-THREE Bundles is a set of Require.js plugins that help you bundle and ship THREE.js resources.
+THREE Bundles is a [Require.js](http://requirejs.org/) package that provides dynamic content loading for various [THREE.js](http://threejs.org/) resources. It organises them in reusable bundles of files, and offers a simple and lightweight mechanism for addressing them.
 
 ## Installing 
 

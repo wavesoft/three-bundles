@@ -19,6 +19,13 @@ define(["three"], function(THREE) {
 		'parseBufferGeometry': THREE.BufferGeometryLoader.prototype.parse,
 
 		/**
+		 * Function to parse geometry to a Geometry object
+		 */
+		'parseGeometry': function(json) {
+			return THREE.JSONLoader.prototype.parse(json, "").geometry;
+		},
+
+		/**
 		 * Function to parse material definition to create a Material object
 		 */
 		'parseMaterial': function(json, textureLookup) {

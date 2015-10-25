@@ -82,7 +82,10 @@ According to the plugin and the filename extension, a different THREE.js object 
     <tr>
         <td>geometry!</td>
         <td>.json</td>
-        <td><code><a target="_blank" href="http://threejs.org/docs/#Reference/Core/Geometry">THREE.Geometry</a></code></td>
+        <td>
+            <code><a target="_blank" href="http://threejs.org/docs/#Reference/Core/Geometry">THREE.Geometry</a></code>
+            <code><a target="_blank" href="http://threejs.org/docs/#Reference/Core/BufferGeometry">THREE.BufferGeometry</a></code>
+        </td>
     </tr>
     <tr>
         <td>material!</td>
@@ -96,6 +99,10 @@ According to the plugin and the filename extension, a different THREE.js object 
     </tr>
     <tr>
         <td>.obj</td>
+        <td><code><a target="_blank" href="http://threejs.org/docs/#Reference/Objects/Mesh">THREE.Mesh</a></code></td>
+    </tr>
+    <tr>
+        <td>.dae</td>
         <td><code><a target="_blank" href="http://threejs.org/docs/#Reference/Objects/Mesh">THREE.Mesh</a></code></td>
     </tr>
     <tr>

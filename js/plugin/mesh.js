@@ -2,7 +2,7 @@
 /**
  * A mesh! plugin for loading THREE Meshes
  */
-define(["three", "three-bundles/utils", "three-bundles/parsers"], function(THREE, Utils, Parsers) {
+define(["three", "three-bundles/utils", "three-bundles/parsers", "three-bundles/extras/OBJLoader"], function(THREE, Utils, Parsers) {
 
 	// Return definition
 	return {
@@ -48,7 +48,43 @@ define(["three", "three-bundles/utils", "three-bundles/parsers"], function(THREE
 
 			} else if (Utils.matchesExt(name, "obj")) {
 
-				onload.error("OBJ not yet supported");
+				// Get defaults for cross-origin
+				var crossOrigin = config.crossOrigin || false;
+
+				// Prepare an image loader
+				var loader = new THREE.OBJLoader();
+				loader.setCrossOrigin( crossOrigin );
+				loader.load( url, function ( mesh ) {
+
+					// We are now loaded
+					onload( mesh );
+
+				}, function() { /* Progress */ }, function(error) {
+
+					// There is an error
+					onload.error(Error("Unable to load OBJ mesh " + name));
+
+				});
+
+			} else if (Utils.matchesExt(name, "dae")) {
+
+				// Get defaults for cross-origin
+				var crossOrigin = config.crossOrigin || false;
+
+				// Prepare an image loader
+				var loader = new THREE.ColladaLoader();
+				loader.setCrossOrigin( crossOrigin );
+				loader.load( url, function ( mesh ) {
+
+					// We are now loaded
+					onload( mesh );
+
+				}, function() { /* Progress */ }, function(error) {
+
+					// There is an error
+					onload.error(Error("Unable to load Collada mesh " + name));
+
+				});
 
 			} else {
 

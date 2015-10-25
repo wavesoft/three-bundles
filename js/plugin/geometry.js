@@ -27,8 +27,29 @@ define(["three", "three-bundles/utils", "three-bundles/parsers"], function(THREE
 				req(["text!"+url], function( geometryJSON ) {
 					// Parse JSON
 					var json = JSON.parse( geometryJSON );
-					// Use common parsers to parse the geometry
-					onload(Parsers.parseBufferGeometry(json));
+
+					// faces,metadata,
+					if ((json.metadata == undefined) || (json.metadata.type == undefined)) {
+						onload.error("Invalid geometry file format");
+						return;
+					}
+
+					// Load either geometry or buffered geometry
+					if (json.metadata.type == "Geometry") {
+
+						// Use common parsers to parse the geometry
+						onload(Parsers.parseGeometry(json));
+
+					} else if (json.metadata.type == "BufferGeometry") {
+
+						// Use common parsers to parse the geometry
+						onload(Parsers.parseBufferGeometry(json));
+
+					} else {
+						onload.error("Unsupported geometry type '"+json.metadata.type+"'");
+						return;
+					}
+
 				}, function(error) {
 					// Pass-through error
 					onload.error(error);

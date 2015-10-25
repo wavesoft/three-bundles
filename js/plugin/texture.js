@@ -2,7 +2,7 @@
 /**
  * A texture! plugin for loading THREE Textures
  */
-define(["three", "three-bundles/utils", "three-bundles/parsers"], function(THREE, Utils, Parsers) {
+define(["three", "three-bundles/utils", "three-bundles/parsers", "three-bundles/extras/DDSLoader"], function(THREE, Utils, Parsers) {
 
     // Return definition
     return {
@@ -18,42 +18,47 @@ define(["three", "three-bundles/utils", "three-bundles/parsers"], function(THREE
 			// Handle files according to format
 			if (Utils.matchesExt(name, ["jpg", "jpeg", "png", "bmp", "gif"])) {
 
-				// Require THREE.js runtime
-				req(["three"], function(THREE) {
+				// Get defaults for cross-origin
+				var crossOrigin = config.crossOrigin || false;
 
-					// Get defaults for cross-origin
-					var crossOrigin = config.crossOrigin || false;
+				// Prepare an image loader
+				var loader = new THREE.ImageLoader();
+				loader.setCrossOrigin( crossOrigin );
+				loader.load( url, function ( image ) {
 
-					// Prepare an image loader
-					var loader = new THREE.ImageLoader();
-					loader.setCrossOrigin( crossOrigin );
-					loader.load( url, function ( image ) {
+					// Create texture
+					var texture = new THREE.Texture( image );
+					texture.needsUpdate = true;
 
-						// Create texture
-						var texture = new THREE.Texture( image );
-						texture.needsUpdate = true;
+					// We are now loaded
+					onload( texture );
 
-						// We are now loaded
-						onload( texture );
+				}, function() { /* Progress */ }, function(error) {
 
-					}, function() { /* Progress */ }, function(error) {
-
-						// There is an error
-						onload.error(Error("Unable to load texture " + name));
-
-					});
-
-				}, function(error) {
-
-					// Pass-through error
-					onload.error(error);
+					// There is an error
+					onload.error(Error("Unable to load texture " + name));
 
 				});
 
 			} else if (Utils.matchesExt(name, "dds")) {
 
-				// We don't know how to handle this
-				onload.error("Compressed texture not yet supported");
+				// Get defaults for cross-origin
+				var crossOrigin = config.crossOrigin || false;
+
+				// Prepare an image loader
+				var loader = new THREE.DDSLoader();
+				loader.setCrossOrigin( crossOrigin );
+				loader.load( url, function ( texture ) {
+
+					// We are now loaded
+					onload( texture );
+
+				}, function() { /* Progress */ }, function(error) {
+
+					// There is an error
+					onload.error(Error("Unable to load compressed texture " + name));
+
+				});
 
 			} else {
 

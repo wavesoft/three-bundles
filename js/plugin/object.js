@@ -19,7 +19,7 @@ define(["three", "three-bundles/utils", "three-bundles/parsers"], function(THREE
 			if (Utils.matchesExt(name, "json")) {
 
 				// Require THREE.js runtime, and load shader contents as text
-				req(["three", "text!"+url], function( THREE, objectJSON ) {
+				req(["text!"+url], function( THREE, objectJSON ) {
 
 					// Parse JSON & Create Object
 					var json = JSON.parse( objectJSON ),

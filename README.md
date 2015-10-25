@@ -93,7 +93,7 @@ According to the plugin and the filename extension, a different THREE.js object 
         <td><code><a target="_blank" href="http://threejs.org/docs/#Reference/Materials/Material">THREE.Material</a></code></td>
     </tr>
     <tr>
-        <td rowspan="2">mesh!</td>
+        <td rowspan="3">mesh!</td>
         <td>.json</td>
         <td><code><a target="_blank" href="http://threejs.org/docs/#Reference/Objects/Mesh">THREE.Mesh</a></code></td>
     </tr>

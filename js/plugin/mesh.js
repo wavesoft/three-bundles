@@ -2,7 +2,7 @@
 /**
  * A mesh! plugin for loading THREE Meshes
  */
-define(["three", "three-bundles/utils", "three-bundles/parsers", "three-bundles/extras/OBJLoader"], function(THREE, Utils, Parsers) {
+define(["three", "three-bundles/utils", "three-bundles/parsers", "three-bundles/extras/OBJLoader", "three-bundles/extras/ColladaLoader"], function(THREE, Utils, Parsers) {
 
 	// Return definition
 	return {

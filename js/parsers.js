@@ -9,11 +9,6 @@ define(["three"], function(THREE) {
 	return {
 
 		/**
-		 * Function to parse OBJ Contents to Object3D
-		 */
-		'parseOBJ': THREE.OBJLoader.prototype.parse,
-
-		/**
 		 * Function to parse a buffered geometry to a Geometry object
 		 */
 		'parseBufferGeometry': THREE.BufferGeometryLoader.prototype.parse,

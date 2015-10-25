@@ -67,9 +67,50 @@ define(["mesh!path/to/mesh.json"], function(mesh) {
 });
 ```
 
-For more details check to the the `Reference` section below.
+Before accessing the resources of a bundle you need first to load it. In order to load a bundle's entry point, including all the resources you should use the `bundle!path/to/bundle` plugin:
+
+```javascript
+    ...
+    require(["bundle!/path/to/bundle"], function(bundle) {
+        scene.add( bundle.someBundleSceneObject );
+    });
+    ...
+```
+
+Upon loading a bundle, it's resources can be accessed in absolute or relative path format:
+
+ * From within the bundle: `texture!./file.jpg`
+ * From another bundle: `texture!bundle.name/file.jpg`
 
 ## Reference
+
+### Bundle Layout
+
+Each bundle is just a folder with multiple sub-folders, one for each kind of resource. Additionaly, it nas an __entry point__ and __index__ file.
+
+For example:
+
+```
+my.bundle
+ |
+ +- texture
+ |   |
+ |   +- tex_diffuse.jpg
+ |   `- tex_normal.jpg
+ +- object
+ |   |
+ |   `- my_object.obj
+ +- main.js
+ `- index.js
+```
+
+The `index.js` file enumerates all the resources in the bundle and is automatically generated using the [tools/update-index.py](https://github.com/wavesoft/three-bundles/blob/master/tools/update-index.py) script.
+
+The `main.js` is the entry point of the bundle, which is used to deliver the core logic of the bundle. I no such logic is required, an empty placeholder can be used instead.
+
+Upon loading a bundle, all the resources defined in the `index.js` file will be downloaded. Then, the entry point will be downloaded and returned.
+
+### Available Plugins
 
 According to the plugin and the filename extension, a different THREE.js object is created. The following table summarises the available modules:
 
@@ -83,7 +124,7 @@ According to the plugin and the filename extension, a different THREE.js object 
         <td>geometry!</td>
         <td>.json</td>
         <td>
-            <code><a target="_blank" href="http://threejs.org/docs/#Reference/Core/Geometry">THREE.Geometry</a></code>
+            <code><a target="_blank" href="http://threejs.org/docs/#Reference/Core/Geometry">THREE.Geometry</a></code>,
             <code><a target="_blank" href="http://threejs.org/docs/#Reference/Core/BufferGeometry">THREE.BufferGeometry</a></code>
         </td>
     </tr>

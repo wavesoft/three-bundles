@@ -166,3 +166,54 @@ According to the plugin and the filename extension, a different THREE.js object 
         <td><code><a target="_blank" href="http://threejs.org/docs/#Reference/Textures/CompressedTexture">THREE.CompressedTexture</a></code></td>
     </tr>
 </table>
+
+### Dynamic Referencing
+
+It is also possible to depend on other resources without explicitly requesting them through a `request` method. For example, a material can depend on one or more textures, just by putting the texture name in the appropriate `map` property. For example:
+
+```javascript
+{
+    "type"  : "MeshBasicMaterial",
+    "color" : 0xffffff,
+    "map"   : "texture!./noise-map.png"
+}
+```
+
+Specific properties of different kinds of resources will trigger this behaviour. The following table enumerates all of them:
+
+<table>
+    <tr>
+        <th>Resource</th>
+        <th>Propertyies</th>
+    </tr>
+    <tr>
+        <td>material / <code>.json</code></td>
+        <td>
+            <code>map</code>,
+            <code>alphaMap</code>,
+            <code>bumpMap</code>,
+            <code>normalMap</code>,
+            <code>displacementMap</code>,
+            <code>specularMap</code>,
+            <code>envMap</code>,
+            <code>lightMap</code>,
+            <code>aoMap</code>,
+            <code>vertexShader</code>,
+            <code>fragmentShader</code>
+        </td>
+    </tr>
+    <tr>
+        <td>mesh / <code>.json</code></td>
+        <td>
+            <code>geometry</code>,
+            <code>material</code>
+        </td>
+    </tr>
+    <tr>
+        <td>mesh / <code>.obj</code></td>
+        <td>
+            Each material <code>name</code> is assumed to be a reference to a material (without the <em>material!</em> prefix)
+        </td>
+    </tr>
+</table>
+

@@ -184,10 +184,10 @@ Specific properties of different kinds of resources will trigger this behaviour.
 <table>
     <tr>
         <th>Resource</th>
-        <th>Propertyies</th>
+        <th>Properties</th>
     </tr>
     <tr>
-        <td>material / <code>.json</code></td>
+        <td>material (<tt>.json</tt>)</td>
         <td>
             <code>map</code>,
             <code>alphaMap</code>,
@@ -203,14 +203,14 @@ Specific properties of different kinds of resources will trigger this behaviour.
         </td>
     </tr>
     <tr>
-        <td>mesh / <code>.json</code></td>
+        <td>mesh (<tt>.json</tt>)</td>
         <td>
             <code>geometry</code>,
             <code>material</code>
         </td>
     </tr>
     <tr>
-        <td>mesh / <code>.obj</code></td>
+        <td>mesh (<tt>.obj</tt>)</td>
         <td>
             Each material <code>name</code> is assumed to be a reference to a material (without the <em>material!</em> prefix)
         </td>

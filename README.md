@@ -121,7 +121,7 @@ According to the plugin and the filename extension, a different THREE.js object 
         <th>THREE.js Object</th>
     <tr/>
     <tr>
-        <td>geometry!</td>
+        <td><tt>geometry!</tt>...</td>
         <td>.json</td>
         <td>
             <code><a target="_blank" href="http://threejs.org/docs/#Reference/Core/Geometry">THREE.Geometry</a></code>,
@@ -129,12 +129,12 @@ According to the plugin and the filename extension, a different THREE.js object 
         </td>
     </tr>
     <tr>
-        <td>material!</td>
+        <td><tt>material!</tt>...</td>
         <td>.json</td>
         <td><code><a target="_blank" href="http://threejs.org/docs/#Reference/Materials/Material">THREE.Material</a></code></td>
     </tr>
     <tr>
-        <td rowspan="3">mesh!</td>
+        <td rowspan="3"><tt>mesh!</tt>...</td>
         <td>.json</td>
         <td><code><a target="_blank" href="http://threejs.org/docs/#Reference/Objects/Mesh">THREE.Mesh</a></code></td>
     </tr>
@@ -147,17 +147,17 @@ According to the plugin and the filename extension, a different THREE.js object 
         <td><code><a target="_blank" href="http://threejs.org/docs/#Reference/Objects/Mesh">THREE.Mesh</a></code></td>
     </tr>
     <tr>
-        <td>object!</td>
+        <td><tt>object!</tt>...</td>
         <td>.json</td>
         <td><code><a target="_blank" href="http://threejs.org/docs/#Reference/Core/Object3D">THREE.Object3D</a></code></td>
     </tr>
     <tr>
-        <td>shader!</td>
+        <td><tt>shader!</tt>...</td>
         <td>.shader, .txt</td>
         <td><code>string</code></td>
     </tr>
     <tr>
-        <td rowspan="2">texture!</td>
+        <td rowspan="2"><tt>texture!</tt>...</td>
         <td>.jpg, .gif, .png, .bmp</td>
         <td><code><a target="_blank" href="http://threejs.org/docs/#Reference/Textures/Texture">THREE.Texture</a></code></td>
     </tr>

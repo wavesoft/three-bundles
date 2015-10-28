@@ -39,7 +39,8 @@ define(function() {
 	 * called when the resources are loaded, passing the arguments of the requre()
 	 * callback handler:
 	 *
-	 * - toObject( arguments ) : Return an object with the 
+	 * - asObject( arguments ) 		: Creates an object with the property name as key 
+	 * - asValueObject( arguments ) : Creates an object with the property value as key 
 	 *
 	 * @param {object} object - The object to check additional reuirements on
 	 * @param {string} moduleName - The name of this module for relative dependency resolution
@@ -98,6 +99,10 @@ define(function() {
 
 	/**
 	 * Check if that's a matching extension(s)
+	 *
+	 * @param {string} path - The path to test
+	 * @param {string|array} ext - The extension to test against
+	 * @returns {bool} Returns true if the extension matches
 	 */
 	Utils.matchesExt = function(path, ext) {
 		// Isolate extesion

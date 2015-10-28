@@ -25,13 +25,14 @@ define(["three", "three-bundles/utils", "three-bundles/parsers"], function(THREE
 					var json = JSON.parse( geometryJSON );
 
 					// faces,metadata,
-					if ((json.metadata == undefined) || (json.metadata.type == undefined)) {
+					if ((json.metadata == undefined) || ((json.metadata.type == undefined) && (json.metadata.vertices == undefined) && (json.metadata.faces == undefined))) {
 						onload.error("Invalid geometry file format");
 						return;
 					}
 
 					// Load either geometry or buffered geometry
-					if (json.metadata.type == "Geometry") {
+					// (If type is missing assume geometry)
+					if ((json.metadata.type == "Geometry") || (json.metadata.type == undefined)) {
 
 						// Use common parsers to parse the geometry
 						onload(Parsers.parseGeometry(json));

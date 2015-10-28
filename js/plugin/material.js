@@ -39,7 +39,9 @@ define(["three", "three-bundles/utils", "three-bundles/parsers"], function(THREE
 						var textureLookup = requirements.asValueObject( arguments );
 
 						// Create material using material parser
-						onload( Parsers.parseMaterial(json, textureLookup) );
+						var material = Parsers.parseMaterial(json, textureLookup);
+						material.morphTargets = true;
+						onload( material );
 
 					}
 

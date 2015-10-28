@@ -28,6 +28,11 @@ define(["three", "three-bundles/utils", "three-bundles/parsers", "three-bundles/
 
 					// Create texture
 					var texture = new THREE.Texture( image );
+
+					// TODO: These should be described in the texture somehow
+					texture.wrapS = THREE.RepeatWrapping;
+					texture.wrapT = THREE.RepeatWrapping;
+					texture.flipY = false;
 					texture.needsUpdate = true;
 
 					// We are now loaded

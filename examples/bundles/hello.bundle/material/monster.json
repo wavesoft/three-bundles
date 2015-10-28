@@ -1,0 +1,4 @@
+{
+	"type": "MeshLambertMaterial",
+	"map": "texture!./monster.jpg"
+}

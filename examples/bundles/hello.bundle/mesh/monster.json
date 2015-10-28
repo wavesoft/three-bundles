@@ -1,0 +1,4 @@
+{
+	"geometry": "geometry!./monster.json",
+	"material": "material!./monster.json"
+}

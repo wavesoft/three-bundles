@@ -10,8 +10,7 @@ define(["three", "three-bundles/utils", "three-bundles/parsers"], function(THREE
 		load: function (name, req, onload, config) {
 
 			// Calculate URL from name
-			var scope = this,
-				parts = name.split("/"),
+			var parts = name.split("/"),
 				moduleName = parts.shift(),
 				filePath = parts.join("/"),
 				url = moduleName + "/material/" + filePath;

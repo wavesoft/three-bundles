@@ -5,9 +5,21 @@
 		<title>Hello THREE Bundles</title>
 		<style type="text/css">
 		body {
+			font-family: Monospace;
+			background-color: #000000;
+			margin: 0px;
 			overflow: hidden;
-			margin: 0;
 		}
+		#info {
+		    color: #fff;
+		    position: absolute;
+		    top: 10px;
+		    width: 100%;
+		    text-align: center;
+		    z-index: 100;
+		    display: block;
+		}
+		a { color: #0099FF; }
 		</style>
 
 		<!-- Load RequireJS and bootstrap example -->
@@ -15,6 +27,9 @@
 
 	</head>
 	<body>
-
+		<div id="info">
+			<a href="https://github.com/wavesoft/three-bundles" target="_blank">THREE Bundles</a> Hello World Example -
+			monster by <a href="http://www.3drt.com/downloads.htm" target="_blank">3drt</a>
+		</div>
 	</body>
 </html>

@@ -147,7 +147,7 @@ define(["three", "fs", "bufferpack", "../binary"], function(THREE, fs, pack, Bin
 
 			// Check numeric range
 			if (is_int16) {
-				if (n % 1 != 1) {
+				if (n % 1 != 0) {
 					is_int16 = false; // Not integer
 				} else if (Math.abs(n) >= 32768) {
 					is_int16 = false; // Bigger than signed 16-bit

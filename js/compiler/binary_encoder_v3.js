@@ -182,7 +182,7 @@ define(["three", "fs", "bufferpack", "../binary_v3"], function(THREE, fs, pack, 
 		if (padSize == 0) return;
 
 		// Write opcode + write pad characters
-		this.writeUint8( OP.PAD_ALIGN + padSize );
+		this.writeUint8( OP.PAD_ALIGN | padSize );
 		for (var i=1; i<padSize; i++)
 			this.writeUint8(0);
 
@@ -325,7 +325,7 @@ define(["three", "fs", "bufferpack", "../binary_v3"], function(THREE, fs, pack, 
 			if (this.logPrimitive) console.log("PRM @"+this.offset+", prim=string");
 			if (v.length < 16) {
 				// Up to 16 characters, the length can fit in header
-				this.writeUint8( OP.STRING_4 + v.length );
+				this.writeUint8( OP.STRING_4 | v.length );
 				this.writeString( v );
 			} else if (v.length < 256) {
 				this.writeUint8( OP.STRING_8 );
@@ -411,7 +411,7 @@ define(["three", "fs", "bufferpack", "../binary_v3"], function(THREE, fs, pack, 
 
 				// Check if we can compact the following  up to 16 numerical values
 				var canCompact = false;
-				for (var j=15; j>0; j--) {
+				for (var j=15; j>1; j--) {
 					if (i+j >= srcArray.length) continue;
 
 					// Check if the current slice is numeric
@@ -422,8 +422,8 @@ define(["three", "fs", "bufferpack", "../binary_v3"], function(THREE, fs, pack, 
 						// Write opcode
 						if (this.logArray) console.log(" >< @"+this.offset+": compact, len=", j);
 						this.writeUint8(
-								OP.NUMBER_N +	// We have N consecutive numbers
-								(j << 3) +		// N=j
+								OP.NUMBER_N |	// We have N consecutive numbers
+								(j << 3)    |	// N=j
 								sliceType		// Consecutive numbers type
 							);
 
@@ -463,7 +463,7 @@ define(["three", "fs", "bufferpack", "../binary_v3"], function(THREE, fs, pack, 
 
 				// Write header
 				if (this.logArray) console.log(" [] @"+this.offset+": n8, type=", _TYPENAME[arrayType],", len=", srcArray.length);
-				this.writeUint8( OP.ARRAY_8 + arrayType );
+				this.writeUint8( OP.ARRAY_8 | arrayType );
 				this.writeUint8( srcArray.length );
 
 			} else if (srcArray.length < 65536) {
@@ -483,7 +483,7 @@ define(["three", "fs", "bufferpack", "../binary_v3"], function(THREE, fs, pack, 
 
 				// Write header
 				if (this.logArray) console.log(" [] @"+this.offset+": n16, type=", _TYPENAME[arrayType],", len=", srcArray.length);
-				this.writeUint8( OP.ARRAY_16 + arrayType );
+				this.writeUint8( OP.ARRAY_16 | arrayType );
 				this.writeUint16( srcArray.length );
 
 			} else {
@@ -503,7 +503,7 @@ define(["three", "fs", "bufferpack", "../binary_v3"], function(THREE, fs, pack, 
 
 				// Write header
 				if (this.logArray) console.log(" [] @"+this.offset+": n32, type=", _TYPENAME[arrayType],", len=", srcArray.length);
-				this.writeUint8( OP.ARRAY_32 + arrayType );
+				this.writeUint8( OP.ARRAY_32 | arrayType );
 				this.writeUint32( srcArray.length );
 
 			}
@@ -584,14 +584,14 @@ define(["three", "fs", "bufferpack", "../binary_v3"], function(THREE, fs, pack, 
 
 		// Start entity
 		if (eid < 32) {
-			this.writeUint8( OP.ENTITY_5 + eid );
+			this.writeUint8( OP.ENTITY_5 | eid );
 		} else {
-			this.writeUint8( OP.ENTITY_13 + ((eid & 0x1F00) >> 8) );
+			this.writeUint8( OP.ENTITY_13 | ((eid & 0x1F00) >> 8) );
 			this.writeUint8( eid & 0xFFFF );
 		}
 
 		// Write down property table
-		if (this.logEntity) console.log("ENT @"+this.offset," eid=" + eid);//, ":", propertyTable);
+		if (this.logEntity) console.log("ENT @"+this.offset," eid=" + eid, ", data=", propertyTable);//, ":", propertyTable);
 		this.writeEncodedArray( propertyTable );
 
 	}

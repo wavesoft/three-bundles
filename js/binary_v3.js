@@ -166,24 +166,23 @@ define(["three"], function(THREE) {
 			function getNumberArray( length, type ) {
 				var ofs = offset;
 				if (type == NUMTYPE.INT8) {
+					offset += length;
 					return new Int8Array( buffer, ofs, length );
 				} else if (type == NUMTYPE.UINT8) {
+					offset += length;
 					return new UInt8Array( buffer, ofs, length );
-
 				} else if (type == NUMTYPE.INT16) {
 					offset += length * 2;
 					return new Int16Array( buffer, ofs, length );
 				} else if (type == NUMTYPE.UINT16) {
 					offset += length * 2;
 					return new UInt16Array( buffer, ofs, length );
-
 				} else if (type == NUMTYPE.INT32) {
 					offset += length * 4;
 					return new Int32Array( buffer, ofs, length );
 				} else if (type == NUMTYPE.UINT32) {
 					offset += length * 4;
 					return new UInt32Array( buffer, ofs, length );
-
 				} else if (type == NUMTYPE.FLOAT32) {
 					offset += length * 4;
 					return new Float32Array( buffer, ofs, length );
@@ -342,7 +341,7 @@ define(["three"], function(THREE) {
 
 						} else if ((op & 0x80) == 0x00) { /* NUMBER_N */
 
-							// Populate compact buffer
+							// Populate compact num buffer
 							compactBuf = [];
 							for (var i=0; i<b64; i++)
 								compactBuf.push( getNum( b30 ) );

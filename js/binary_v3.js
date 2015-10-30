@@ -11,6 +11,8 @@ define(["three"], function(THREE) {
 		THREE.Face3,
 		THREE.Color,
 		THREE.Geometry,
+		THREE.BufferGeometry,
+		THREE.BufferAttribute,
 		THREE.Sphere,
 	];
 
@@ -26,33 +28,38 @@ define(["three"], function(THREE) {
 		[ 'r', 'g', 'b' ],
 		// THREE.Geometry
 		[ 'vertices', 'faces', 'faceVertexUvs', 'boundingSphere' ],
+		// THREE.BufferGeometry
+		[ 'attributes' ],
+		// THREE.BufferAttribute
+		[ 'array', 'dynamic', 'itemSize', 'updateRange' ],
 		// THREE.Sphere
 		[ 'center', 'radius' ],
 	];
 
 	// Opcodes
 	var OP = {
-		UNDEFINED: 	0xF8,	// Undefined primitive
-		NULL: 		0xF9,	// NULL Primitive
-		FALSE: 		0xFA,	// False primitive
-		TRUE: 		0xFB,	// True primitive
-		PAD_ALIGN: 	0xF0,	// Padding characters for alignment
-		STRING_8: 	0xE0,	// A string with 8-bit index
-		STRING_16: 	0xE1,	// A string with 16-bit index
-		STRING_32: 	0xE2,	// A string with 32-bit index
-		ARRAY_X_8:	0xE3,	// An element array with 8-bit index
-		ARRAY_X_16:	0xE4,	// An element array with 16-bit index
-		ARRAY_X_32:	0xE5,	// An element array with 32-bit index
-		ARRAY_EMPTY:0xE6, 	// An empty array
-		REF_16: 	0xE7, 	// A reference to a previous entity
-		STRING_4:	0xE8,	// A string with 4-bit embedded index
-		NUMBER_1: 	0xC0,	// A single number
-		ARRAY_8: 	0xC8,	// A numeric array with 8-bit index
-		ARRAY_16: 	0xD0,	// A numeric array with 16-bit index
-		ARRAY_32: 	0xD8,	// A numeric array with 32-bit index
-		ENTITY_5: 	0x80,	// An entity with 5-bit embedded eid
-		ENTITY_13: 	0xA0,	// An entity with 13-bit eid
-		NUMBER_N: 	0x00, 	// Consecutive, up to 16 numbers of same type
+		DICT: 		 0xFD,	// A plain dictionary
+		UNDEFINED: 	 0xF8,	// Undefined primitive
+		NULL: 		 0xF9,	// NULL Primitive
+		FALSE: 		 0xFA,	// False primitive
+		TRUE: 		 0xFB,	// True primitive
+		PAD_ALIGN: 	 0xF0,	// Padding characters for alignment
+		STRING_8: 	 0xE0,	// A string with 8-bit index
+		STRING_16: 	 0xE1,	// A string with 16-bit index
+		STRING_32: 	 0xE2,	// A string with 32-bit index
+		ARRAY_X_8:	 0xE3,	// An element array with 8-bit index
+		ARRAY_X_16:	 0xE4,	// An element array with 16-bit index
+		ARRAY_X_32:	 0xE5,	// An element array with 32-bit index
+		ARRAY_EMPTY: 0xE6, 	// An empty array
+		REF_16: 	 0xE7, 	// A reference to a previous entity
+		STRING_3:	 0xE8,	// A string with 4-bit embedded index
+		NUMBER_1: 	 0xC0,	// A single number
+		ARRAY_8: 	 0xC8,	// A numeric array with 8-bit index
+		ARRAY_16: 	 0xD0,	// A numeric array with 16-bit index
+		ARRAY_32: 	 0xD8,	// A numeric array with 32-bit index
+		ENTITY_5: 	 0x80,	// An entity with 5-bit embedded eid
+		ENTITY_13: 	 0xA0,	// An entity with 13-bit eid
+		NUMBER_N: 	 0x00, 	// Consecutive, up to 16 numbers of same type
 	}
 
 	// Number types
@@ -95,71 +102,42 @@ define(["three"], function(THREE) {
 			var buffer = req.response,
 				dataview = new DataView(buffer),
 				offset = 0,	prevOp = 0, currOp = 0,
-				compactBuf = [], crossRef = [];
+				compactBuf = [], crossRef = [],
+				viewUint8 = new Uint8Array(buffer),
+				viewInt8 = new Int8Array(buffer),
+				keyIndex = [ ];
 
-			function getUint8() {
-				offset += 1;
-				return dataview.getUint8(offset-1);
-			}
-			function getInt8() {
-				offset += 1;
-				return dataview.getInt8(offset-1);
-			}
-			function getInt16() {
-				offset += 2;
-				return dataview.getInt16(offset-2);
-			}
-			function getUint16() {
-				offset += 2;
-				return dataview.getUint16(offset-2);
-			}
-			function getInt32() {
-				offset += 4;
-				return dataview.getInt32(offset-4);
-			}
-			function getUint32() {
-				offset += 4;
-				return dataview.getUint32(offset-4);
-			}
-			function getFloat32() {
-				offset += 4;
-				return dataview.getFloat32(offset-4);
-			}
-			function getFloat64() {
-				offset += 8;
-				return dataview.getFloat64(offset-8);
-			}
 			function getNum(type) {
 				if (type == NUMTYPE.INT8) {
-					return getInt8();
+					return viewInt8[offset++];
 				} else if (type == NUMTYPE.UINT8) {
-					return getUint8();
+					return viewUint8[offset++];
 				} else if (type == NUMTYPE.INT16) {
-					return getInt16();
+					return dataview.getInt16( (offset+=2)-2, true );
 				} else if (type == NUMTYPE.UINT16) {
-					return getUint16();
+					return dataview.getUint16( (offset+=2)-2, true );
 				} else if (type == NUMTYPE.INT32) {
-					return getInt32();
+					return dataview.getInt32( (offset+=4)-4, true );
 				} else if (type == NUMTYPE.UINT32) {
-					return getUint32();
+					return dataview.getUint32( (offset+=4)-4, true );
 				} else if (type == NUMTYPE.FLOAT32) {
-					return getFloat32();
+					return dataview.getFloat32( (offset+=4)-4, true );
 				} else if (type == NUMTYPE.FLOAT64) {
-					return getFloat64();
+					return dataview.getFloat64( (offset+=8)-8, true );
 				}
 			}
 
 			function getString( length ) {
 				var str = "";
 				for (var i=0; i<length; i++)
-					str += String.fromCharCode( getUint8() );
+					str += String.fromCharCode( viewUint8[offset++] );
 				return str;
 			}
 
 			function getArray( length ) {
 				var array = new Array( length );
 				for (var i=0; i<length; i++)
-					array[i] = getObject();
+					array[i] = getPrimitive();
 				return array;
 			}
 
@@ -170,7 +148,7 @@ define(["three"], function(THREE) {
 					return new Int8Array( buffer, ofs, length );
 				} else if (type == NUMTYPE.UINT8) {
 					offset += length;
-					return new UInt8Array( buffer, ofs, length );
+					return new Uint8Array( buffer, ofs, length );
 				} else if (type == NUMTYPE.INT16) {
 					offset += length * 2;
 					return new Int16Array( buffer, ofs, length );
@@ -189,7 +167,6 @@ define(["three"], function(THREE) {
 				} else if (type == NUMTYPE.FLOAT64) {
 					offset += length * 8;
 					return new Float64Array( buffer, ofs, length );
-
 				}
 			}
 
@@ -202,6 +179,10 @@ define(["three"], function(THREE) {
 						toString 	: function(){return this.name + ": " + this.message;}
 					};
 
+				if (eid == 2) {
+					console.error("That's a THREE.Face3");
+				}
+
 				// Instantiate entry
 				var instance = new ENTITIES[eid]();
 
@@ -210,7 +191,7 @@ define(["three"], function(THREE) {
 
 				// Get an array that contains the values
 				// for the properties in the property table
-				var values = getObject();
+				var values = getPrimitive();
 
 				// Iterate over properties
 				var props = PROPERTIES[eid];
@@ -222,19 +203,30 @@ define(["three"], function(THREE) {
 				return instance;
 			}
 
-			function getObject( valid_opcodes ) {
+			function getDict( size ) {
+				// Create a dict
+				var dict = { };
+				for (var i=0; i<size; i++) {
+					var k = keyIndex[dataview.getUint16( (offset+=2)-2, true )];
+					var v = getPrimitive();
+					dict[k] = v;
+				}
+				return dict;
+			}
+
+			function getPrimitive( valid_opcodes ) {
 
 				// If we have a compacted buffer, drain it
 				if (compactBuf.length > 0) 
 					return compactBuf.shift();
 
 				// Get next opcode
-				var op = getUint8();
+				var op = viewUint8[offset++];
 
-				// Skip alignment opcodes
+				// Skip PAD_ALIGN opcodes
 				if ((op & 0xF8) == 0xF0) {
 					offset += (op & 0x07) - 1;
-					op = getUint8();
+					op = viewUint8[offset++];
 				}
 
 				// Keep last opcode for debug messages
@@ -275,13 +267,13 @@ define(["three"], function(THREE) {
 					// -----------------------
 
 					case OP.STRING_8:
-						return getString( getUint8() );
+						return getString( viewUint8[offset++] );
 
 					case OP.STRING_16:
-						return getString( getUint16() );
+						return getString( dataview.getUint16( (offset+=2)-2, true ) );
 
 					case OP.STRING_32:
-						return getString( getUint32() );
+						return getString( dataview.getUint32( (offset+=4)-4, true ) );
 
 					// -----------------------
 					//  Arrays
@@ -291,20 +283,27 @@ define(["three"], function(THREE) {
 						return [ ];
 
 					case OP.ARRAY_X_8:
-						return getArray( getUint8() );
+						return getArray( viewUint8[offset++] );
 
 					case OP.ARRAY_X_16:
-						return getArray( getUint16() );
+						return getArray( dataview.getUint16( (offset+=2)-2, true ) );
 
 					case OP.ARRAY_X_32:
-						return getArray( getUint32() );
+						return getArray( dataview.getUint32( (offset+=4)-4, true ) );
+
+					// -----------------------
+					//  Dictionary
+					// -----------------------
+
+					case OP.DICT:
+						return getDict( viewUint8[offset++] );
 
 					// -----------------------
 					//  Cross-reference
 					// -----------------------
 
 					case OP.REF_16:
-						return crossRef[ getUint16() ];
+						return crossRef[ dataview.getUint16( (offset+=2)-2, true ) ];
 
 					// -----------------------
 					//  Comlpex Opcodes
@@ -312,39 +311,37 @@ define(["three"], function(THREE) {
 
 					default:
 
-						var b30 = (op & 0x7),		// Bits 3:0
+						var b20 = (op & 0x7),		// Bits 3:0
 							b40 = (op & 0x1F), 		// Bits 4:0
 							b64 = (op & 0x78) >> 3; // Bits 6:3
 
-						if ((op & 0xF8) == 0xE8) { /* STRING_4 */
-							return getString( b30 );
+						if ((op & 0xF8) == 0xE8) { /* STRING_3 */
+							return getString( b20 );
 
 						} else if ((op & 0xF8) == 0xC0) { /* NUMBER_1 */
-							return getNum( b30 );
+							return getNum( b20 );
 
 						} else if ((op & 0xF8) == 0xC8) { /* ARRAY_8 */
-							return getNumberArray( getUint8(), b30 );
+							return getNumberArray( viewUint8[offset++], b20 );
 
 						} else if ((op & 0xF8) == 0xD0) { /* ARRAY_16 */
-							return getNumberArray( getUint16(), b30 );
+							return getNumberArray( dataview.getUint16( (offset+=2)-2, true ), b20 );
 
 						} else if ((op & 0xF8) == 0xD8) { /* ARRAY_32 */
-							return getNumberArray( getUint32(), b30 );
+							return getNumberArray( dataview.getUint32( (offset+=4)-4, true ), b20 );
 
 						} else if ((op & 0xE0) == 0x80) { /* ENTITY_5 */
-							console.log("@"+offset+": eid=",b40);
 							return getEntity( b40 );
 
 						} else if ((op & 0xE0) == 0xA0) { /* ENTITY_13 */
-							console.log("@"+offset+": eid=",(b40 << 8) + getUint8());
-							return getEntity( (b40 << 8) + getUint8() );
+							return getEntity( (b40 << 8) + viewUint8[offset++] );
 
 						} else if ((op & 0x80) == 0x00) { /* NUMBER_N */
 
 							// Populate compact num buffer
 							compactBuf = [];
 							for (var i=0; i<b64; i++)
-								compactBuf.push( getNum( b30 ) );
+								compactBuf.push( getNum( b20 ) );
 
 							// Pop firt
 							return compactBuf.shift();
@@ -363,8 +360,24 @@ define(["three"], function(THREE) {
 
 			}
 
+			// Populate key index
+			var indexSize = dataview.getUint16( viewUint8.length - 2, true );
+			offset = viewUint8.length - indexSize;
+			while (true) {
+				keyIndex.push( getPrimitive() );
+				// Check if we reached the end
+				if ((offset + 2 >= viewUint8.length) || ((viewUint8[offset] & 0xF8) == 0xF0))
+					break;
+			} 
+			offset = 0;
+
 			// Fire callback with first object 
-			callback( getObject() )
+			var ts = Date.now(),
+				obj = getPrimitive();
+			ts = Date.now() - ts;
+			console.log("Parsing time", ts, "ms");
+
+			callback( obj );
 
 		}
 	}

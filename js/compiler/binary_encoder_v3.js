@@ -1,15 +1,15 @@
 /**
  * Package Binary Loader
  */
-define(["three", "fs", "bufferpack", "../binary_v3"], function(THREE, fs, pack, Binary) {
+define(["three", "fs", "bufferpack", "util", "../binary_v3"], function(THREE, fs, pack, util, Binary) {
 
 	/**
 	 * Import entity and property tables, along with opcodes from binary.js
 	 */
 	var ENTITIES = Binary.ENTITIES,
 		PROPERTIES = Binary.PROPERTIES,
-		OP = Binary.OP,
-		NUMTYPE = Binary.NUMTYPE;
+		NUMTYPE = Binary.NUMTYPE,
+		OP = Binary.OP;
 
 	var _TYPENAME = [
 		'INT8', 
@@ -30,13 +30,19 @@ define(["three", "fs", "bufferpack", "../binary_v3"], function(THREE, fs, pack, 
 	var BinaryEncoder = function( filename ) {
 		this.offset = 0;
 
+		// Debug logging
 		this.logWrite = true;
 		this.logPrimitive = true;
 		this.logArray = true;
 		this.logRef = true;
 		this.logEntity = true;
 
+		// Cross-reference lookup table
 		this.encodedReferences = [ ];
+
+		// Dictionary key lokup
+		this.keyDictIndex = [ ];
+
 		this.stream = fs.createWriteStream( filename );
 	};
 
@@ -44,6 +50,9 @@ define(["three", "fs", "bufferpack", "../binary_v3"], function(THREE, fs, pack, 
 	 * Close the stream
 	 */
 	BinaryEncoder.prototype.close = function() {
+		// Write key index
+		this.writeKeyIndex();
+		// Finalize stream
 		this.stream.end();
 	}
 
@@ -57,7 +66,7 @@ define(["three", "fs", "bufferpack", "../binary_v3"], function(THREE, fs, pack, 
 	BinaryEncoder.prototype.writeUint8 = function( d ) {
 		if (this.logWrite) console.log("    #"+this.offset+"=",d);
 		this.offset += 1;
-		this.stream.write( pack.pack('>B', [d]) );
+		this.stream.write( pack.pack('<B', [d]) );
 	}
 
 	/**
@@ -66,7 +75,7 @@ define(["three", "fs", "bufferpack", "../binary_v3"], function(THREE, fs, pack, 
 	BinaryEncoder.prototype.writeInt8 = function( d ) {
 		if (this.logWrite) console.log("    #"+this.offset+"=",d);
 		this.offset += 1;
-		this.stream.write( pack.pack('>b', [d]) );
+		this.stream.write( pack.pack('<b', [d]) );
 	}
 
 	/**
@@ -75,7 +84,7 @@ define(["three", "fs", "bufferpack", "../binary_v3"], function(THREE, fs, pack, 
 	BinaryEncoder.prototype.writeUint16 = function( d ) {
 		if (this.logWrite) console.log("    #"+this.offset+"=",d);
 		this.offset += 2;
-		this.stream.write( pack.pack('>H', [d]) );
+		this.stream.write( pack.pack('<H', [d]) );
 	}
 
 	/**
@@ -84,7 +93,7 @@ define(["three", "fs", "bufferpack", "../binary_v3"], function(THREE, fs, pack, 
 	BinaryEncoder.prototype.writeInt16 = function( d ) {
 		if (this.logWrite) console.log("    #"+this.offset+"=",d);
 		this.offset += 2;
-		this.stream.write( pack.pack('>h', [d]) );
+		this.stream.write( pack.pack('<h', [d]) );
 	}
 
 	/**
@@ -102,7 +111,7 @@ define(["three", "fs", "bufferpack", "../binary_v3"], function(THREE, fs, pack, 
 	BinaryEncoder.prototype.writeUint32 = function( d ) {
 		if (this.logWrite) console.log("    #"+this.offset+"=",d);
 		this.offset += 4;
-		this.stream.write( pack.pack('>I', [d]) );
+		this.stream.write( pack.pack('<I', [d]) );
 	}
 
 	/**
@@ -111,7 +120,7 @@ define(["three", "fs", "bufferpack", "../binary_v3"], function(THREE, fs, pack, 
 	BinaryEncoder.prototype.writeInt32 = function( d ) {
 		if (this.logWrite) console.log("    #"+this.offset+"=",d);
 		this.offset += 4;
-		this.stream.write( pack.pack('>i', [d]) );
+		this.stream.write( pack.pack('<i', [d]) );
 	}
 
 	/**
@@ -120,7 +129,7 @@ define(["three", "fs", "bufferpack", "../binary_v3"], function(THREE, fs, pack, 
 	BinaryEncoder.prototype.writeFloat32 = function( d ) {
 		if (this.logWrite) console.log("    #"+this.offset+"=",d);
 		this.offset += 4;
-		this.stream.write( pack.pack('>f', [d]) );
+		this.stream.write( pack.pack('<f', [d]) );
 	}
 
 	/**
@@ -129,7 +138,7 @@ define(["three", "fs", "bufferpack", "../binary_v3"], function(THREE, fs, pack, 
 	BinaryEncoder.prototype.writeFloat64 = function( d ) {
 		if (this.logWrite) console.log("    #"+this.offset+"=",d);
 		this.offset += 8;
-		this.stream.write( pack.pack('>d', [d]) );
+		this.stream.write( pack.pack('<d', [d]) );
 	}
 
 	/**
@@ -138,7 +147,7 @@ define(["three", "fs", "bufferpack", "../binary_v3"], function(THREE, fs, pack, 
 	BinaryEncoder.prototype.writeString = function( d ) {
 		if (this.logWrite) console.log("    #"+this.offset+"=",d);
 		this.offset += d.length;
-		this.stream.write( pack.pack('>s', [d]) );
+		this.stream.write( d );
 	}
 
 	////////////////////////////////////////////////////////////
@@ -158,7 +167,10 @@ define(["three", "fs", "bufferpack", "../binary_v3"], function(THREE, fs, pack, 
 			this.writeFloat32, this.writeFloat64,
 		];
 
-		if (v instanceof Array) {
+		if ((v instanceof Array) || (v instanceof Uint8Array) || (v instanceof Int8Array) ||
+			(v instanceof Uint16Array) || (v instanceof Int16Array) ||
+			(v instanceof Uint32Array) || (v instanceof Int32Array) ||
+			(v instanceof Float32Array) || (v instanceof Float64Array)) {
 			// Write array
 			for (var i=0; i<v.length; i++)
 				typeFn[type].call( this, v[i] );
@@ -191,6 +203,23 @@ define(["three", "fs", "bufferpack", "../binary_v3"], function(THREE, fs, pack, 
 	////////////////////////////////////////////////////////////
 	// Helper functions
 	////////////////////////////////////////////////////////////
+
+	/**
+	 * Lookup and if needed update the key index
+	 */
+	BinaryEncoder.prototype.getKeyIndex = function( key ) {
+		// Check if this key exists in index
+		var idx = this.keyDictIndex.indexOf( key );
+
+		// Allocate new key if missing
+		if (idx == -1) {
+			idx = this.keyDictIndex.length;
+			this.keyDictIndex.push( key );
+		}
+
+		// Return idnex
+		return idx;
+	}
 
 	/**
 	 * Get minimum type to fit this number
@@ -241,6 +270,25 @@ define(["three", "fs", "bufferpack", "../binary_v3"], function(THREE, fs, pack, 
 	 * Get minimum type to fit this numeric array
 	 */
 	BinaryEncoder.prototype.getNumArrayType = function( v ) {
+
+		// Typed arrays are simple
+		if (v instanceof Uint8Array) {
+			return NUMTYPE.UINT8;
+		} else if (v instanceof Int8Array) {
+			return NUMTYPE.INT8;
+		} else if (v instanceof Uint16Array) {
+			return NUMTYPE.UINT16;
+		} else if (v instanceof Int16Array) {
+			return NUMTYPE.INT16;
+		} else if (v instanceof Uint32Array) {
+			return NUMTYPE.UINT32;
+		} else if (v instanceof Int32Array) {
+			return NUMTYPE.INT32;
+		} else if (v instanceof Float32Array) {
+			return NUMTYPE.FLOAT32;
+		} else if (v instanceof Float64Array) {
+			return NUMTYPE.FLOAT64;
+		}
 
 		// Get bounds
 		var min = v[0], max = v[0], is_float = false;
@@ -323,9 +371,9 @@ define(["three", "fs", "bufferpack", "../binary_v3"], function(THREE, fs, pack, 
 		} else if (typeof(v) == "string") {
 
 			if (this.logPrimitive) console.log("PRM @"+this.offset+", prim=string");
-			if (v.length < 16) {
+			if (v.length < 8) {
 				// Up to 16 characters, the length can fit in header
-				this.writeUint8( OP.STRING_4 | v.length );
+				this.writeUint8( OP.STRING_3 | v.length );
 				this.writeString( v );
 			} else if (v.length < 256) {
 				this.writeUint8( OP.STRING_8 );
@@ -346,19 +394,29 @@ define(["three", "fs", "bufferpack", "../binary_v3"], function(THREE, fs, pack, 
 			// Store a single number
 			if (this.logPrimitive) console.log("PRM @"+this.offset+", prim=number");
 			var tn = this.getNumType(v);
+			this.writeUint8( OP.NUMBER_1 | tn );
 			this.writeNum( v, tn );
 
-		} else if (v instanceof Array) {
+		} else if ((v instanceof Array) || (v instanceof Uint8Array) || (v instanceof Int8Array) ||
+			(v instanceof Uint16Array) || (v instanceof Int16Array) ||
+			(v instanceof Uint32Array) || (v instanceof Int32Array) ||
+			(v instanceof Float32Array) || (v instanceof Float64Array)) {
 
 			// Encode array
 			if (this.logPrimitive) console.log("PRM @"+this.offset+", prim=array");
 			this.writeEncodedArray( v );
 
+		} else if (v.constructor === ({}).constructor) {
+
+			// Encode dictionary
+			if (this.logPrimitive) console.log("PRM @"+this.offset+", prim=dict");
+			this.writeEncodedDict( v );				
+
 		} else {
 
 			// Encode object in the this
 			if (this.logPrimitive) console.log("PRM @"+this.offset+", prim=object");
-			this.writeEncodedObject( v );				
+			this.writeEncodedEntity( v );				
 
 		}
 
@@ -370,6 +428,31 @@ define(["three", "fs", "bufferpack", "../binary_v3"], function(THREE, fs, pack, 
 	BinaryEncoder.prototype.iterateAndWrite = function( array, writeFn ) {
 		for (var i=0; i<array.length; i++)
 			writeFn.call(this, array[i] );
+	}
+
+	/**
+	 * Encode a dictionary
+	 */
+	BinaryEncoder.prototype.writeEncodedDict = function( srcDict ) {
+
+		// Count own properties
+		var propCount = 0;
+		for (var k in srcDict) {
+			if (!srcDict.hasOwnProperty(k)) continue;
+			propCount++;
+		}
+
+		// Write down objects
+		this.writeUint8(OP.DICT);
+		this.writeUint8(propCount);
+		for (var k in srcDict) {
+			if (!srcDict.hasOwnProperty(k)) continue;
+			// Write the index of the key
+			this.writeUint16(this.getKeyIndex(k));
+			// Write primitive
+			this.writePrimitive(srcDict[k]);
+		}
+
 	}
 
 	/**
@@ -432,7 +515,7 @@ define(["three", "fs", "bufferpack", "../binary_v3"], function(THREE, fs, pack, 
 
 						// We used compact
 						canCompact = true;
-						i += j;
+						i += j-1;
 						break;
 					}
 				}
@@ -518,7 +601,7 @@ define(["three", "fs", "bufferpack", "../binary_v3"], function(THREE, fs, pack, 
 	/**
 	 * Encode a particular object to a binary stream
 	 */
-	BinaryEncoder.prototype.writeEncodedObject = function( object ) {
+	BinaryEncoder.prototype.writeEncodedEntity = function( object ) {
 
 		// Handle byref cross-references
 		var refID = this.encodedReferences.indexOf(object);
@@ -535,6 +618,16 @@ define(["three", "fs", "bufferpack", "../binary_v3"], function(THREE, fs, pack, 
 		for (var i=0; i<ENTITIES.length; i++)
 			if (object instanceof ENTITIES[i])
 				{ eid = i; break; }
+
+		// If no such entity exists, raise exception
+		if (eid < 0) {
+			console.log(util.inspect(object));
+			throw {
+				'name' 		: 'EncodingError',
+				'message'	: 'The specified object is not of known entity type',
+				toString 	: function(){return this.name + ": " + this.message;}
+			};
+		}
 
 		// Handle ByVal cross-references
 		for (var i=0; i<this.encodedReferences.length; i++) {
@@ -561,14 +654,6 @@ define(["three", "fs", "bufferpack", "../binary_v3"], function(THREE, fs, pack, 
 
 		// Keep object in cross-referencing database
 		this.encodedReferences.push(object);
-
-		// If no such entity exists, raise exception
-		if (eid < 0)
-			throw {
-				'name' 		: 'EncodingError',
-				'message'	: 'The specified object is not of known entity type',
-				toString 	: function(){return this.name + ": " + this.message;}
-			};
 
 		// Prepare property table
 		var propertyTable = new Array( PROPERTIES[eid].length );
@@ -597,12 +682,33 @@ define(["three", "fs", "bufferpack", "../binary_v3"], function(THREE, fs, pack, 
 	}
 
 	/**
+	 * Write key index at the end of the file
+	 */
+	BinaryEncoder.prototype.writeKeyIndex = function() {
+
+		// Write string objects
+		var startOffset = this.offset;
+		for (var i=0; i<this.keyDictIndex.length; i++) {
+			this.writePrimitive( this.keyDictIndex[i] );
+		}
+
+		// Make sure that after the length bytes, 
+		// we are 64-bit padded in order
+		// for Float64 view to match this.
+		this.writeAlign(8, 2);
+
+		// Write offset header
+		this.writeUint16( this.offset - startOffset + 2 );
+
+	}
+
+	/**
 	 * Encode a particular object to a binary stream
 	 */
 	BinaryEncoder.prototype.encode = function( object ) {
 
-		// Encode object
-		this.writeEncodedObject( object );
+		// Encode primitive
+		this.writePrimitive( object );
 
 	}
 

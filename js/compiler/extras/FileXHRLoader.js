@@ -1,9 +1,9 @@
 /**
- * @author mrdoob / http://mrdoob.com/
+ * @author Ioannis Charalampidis / https://github.com/wavesoft
  */
 define(["three", "fs"], function(THREE, fs) {
 
-    console.log("Using THREE.FileXHRLoader instead of THREE.XHRLoader");
+    console.info("Replacing THREE.XHRLoader with local-file loader");
 
     THREE.XHRLoader = function ( manager ) {
 

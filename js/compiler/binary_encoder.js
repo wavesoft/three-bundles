@@ -40,10 +40,14 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "../binary"], funct
             view[i] = buf[i];
         }
 
-		// Write data url
+		// Replace url
 		values[0] = view;
-	}
 
+	};
+
+	/**
+	 * String representation of every type
+	 */
 	var _TYPENAME = [
 		'INT8', 
 		'UINT8',
@@ -60,7 +64,7 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "../binary"], funct
 	/**
 	 * THREE Bundles Binary encoder
 	 */
-	var BinaryEncoder = function( filename ) {
+	var BinaryEncoder = function( filename, bundleName ) {
 		this.offset = 0;
 
 		// Debug logging
@@ -71,11 +75,25 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "../binary"], funct
 		this.logAlign = false;
 		this.logEntity = false;
 		this.logCompact = false;
+		this.logTag = true;
+
+		// Get bundle name from filename if not provided
+		if (bundleName == undefined) {
+			// Strip extension 
+			var ext = filename.split(".").pop();
+			bundleName = filename.substr(0,filename.length-ext.length-1);
+		}
+		this.bundleName = bundleName;
 
 		// Cross-reference lookup table
 		this.encodedReferences = [ ];
 		this.useCrossRef = 2;
 		this.useCompact = true;
+
+		// Cross-reference across bundles throguh database of tags
+		this.database = { };
+		this.dbObjects = [ ];
+		this.dbTags = [ ];
 
 		// Dictionary key lokup
 		this.keyDictIndex = [ ];
@@ -91,6 +109,25 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "../binary"], funct
 		this.writeKeyIndex();
 		// Finalize stream
 		this.stream.end();
+	}
+
+	/**
+	 * Define an external database of tagged objects to use
+	 * for cross-referencing external entities.
+	 */
+	BinaryEncoder.prototype.setDatabase = function( db, prefix ) {
+		if (!prefix) prefix="";
+
+		// Import into a easy-to-process format
+		for (var k in db) {
+			if (!db.hasOwnProperty(k)) continue;
+			this.dbTags.push( prefix+k );
+			this.dbObjects.push( db[k] );
+		}
+
+		// Keep reference of database
+		this.database = db;
+
 	}
 
 	////////////////////////////////////////////////////////////
@@ -385,30 +422,49 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "../binary"], funct
 	/**
 	 * Write a primitive
 	 */
-	BinaryEncoder.prototype.writePrimitive = function( v ) {
+	BinaryEncoder.prototype.writePrimitive = function( v, tag ) {
+
+		// Check for external references
+		var dbRef = this.dbObjects.indexOf(v);
+		if (dbRef >= 0) {
+			if (this.logTag) console.log("TAG @"+this.offset+": import="+this.dbTags[dbRef]);
+			this.writeUint8( OP.REF_TAG );
+			this.writeUint16( this.getKeyIndex(this.dbTags[dbRef]) );
+			return;
+		}
+
+		// If we have a tag, tag this primitive first
+		if (tag) {
+			if (this.logTag) console.log("TAG @"+this.offset+": export="+tag);
+			this.writeUint8( OP.TAG );
+			this.writeUint16( this.getKeyIndex(tag) );
+
+			// Update database
+			this.database[this.bundleName+'/'+tag] = v;
+		}
 
 		// Check native types
 		if (typeof(v) == "undefined") {
 
 			// Store undefined
-			if (this.logPrimitive) console.log("PRM @"+this.offset+", prim=undefined");
+			if (this.logPrimitive) console.log("PRM @"+this.offset+": prim=undefined");
 			this.writeUint8( OP.UNDEFINED );
 
 		} else if (v === null) {
 
 			// Store null
-			if (this.logPrimitive) console.log("PRM @"+this.offset+", prim=null");
+			if (this.logPrimitive) console.log("PRM @"+this.offset+": prim=null");
 			this.writeUint8( OP.NULL );
 
 		} else if (typeof(v) == "boolean") {
 
 			// Store boolean
-			if (this.logPrimitive) console.log("PRM @"+this.offset+", prim=false");
+			if (this.logPrimitive) console.log("PRM @"+this.offset+": prim=false");
 			this.writeUint8( OP.FALSE + (v ? 1 : 0) );
 
 		} else if (typeof(v) == "string") {
 
-			if (this.logPrimitive) console.log("PRM @"+this.offset+", prim=string");
+			if (this.logPrimitive) console.log("PRM @"+this.offset+": prim=string");
 			if (v.length < 8) {
 				// Up to 16 characters, the length can fit in header
 				this.writeUint8( OP.STRING_3 | v.length );
@@ -430,7 +486,7 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "../binary"], funct
 		} else if (typeof(v) == "number") {
 
 			// Store a single number
-			if (this.logPrimitive) console.log("PRM @"+this.offset+", prim=number");
+			if (this.logPrimitive) console.log("PRM @"+this.offset+": prim=number");
 			var tn = this.getNumType(v);
 			this.writeUint8( OP.NUMBER_1 | tn );
 			this.writeNum( v, tn );
@@ -441,19 +497,19 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "../binary"], funct
 			(v instanceof Float32Array) || (v instanceof Float64Array)) {
 
 			// Encode array
-			if (this.logPrimitive) console.log("PRM @"+this.offset+", prim=array");
+			if (this.logPrimitive) console.log("PRM @"+this.offset+": prim=array");
 			this.writeEncodedArray( v );
 
 		} else if (v.constructor === ({}).constructor) {
 
 			// Encode dictionary
-			if (this.logPrimitive) console.log("PRM @"+this.offset+", prim=dict");
+			if (this.logPrimitive) console.log("PRM @"+this.offset+": prim=dict");
 			this.writeEncodedDict( v );				
 
 		} else {
 
 			// Encode object in the this
-			if (this.logPrimitive) console.log("PRM @"+this.offset+", prim=object");
+			if (this.logPrimitive) console.log("PRM @"+this.offset+": prim=object");
 			this.writeEncodedEntity( v );				
 
 		}
@@ -758,10 +814,10 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "../binary"], funct
 	/**
 	 * Encode a particular object to a binary stream
 	 */
-	BinaryEncoder.prototype.encode = function( object ) {
+	BinaryEncoder.prototype.encode = function( object, name ) {
 
 		// Encode primitive
-		this.writePrimitive( object );
+		this.writePrimitive( object, name );
 
 	}
 

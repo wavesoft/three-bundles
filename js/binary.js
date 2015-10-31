@@ -102,7 +102,12 @@ define(["three"], function(THREE) {
 
 	};
 
-	// Entity Type
+	/**
+	 * Compactable entities
+	 *
+	 * The first 32 entities occupy 1 byte less, therefore for optimisation
+	 * purposes try to move the most frequently used entities to the top.
+	 */
 	var ENTITIES = [
 		
 		[THREE.Vector2, 								FACTORY.Default, 				INIT.Default ],
@@ -142,7 +147,13 @@ define(["three"], function(THREE) {
 
 	];
 
-	// Reusable property sets
+	/**
+	 * Reusable property sets
+	 *
+	 * Hint: Consequent numbers can be further optimised, so try to move
+	 * numerical properties close to eachother.
+	 *
+	 */
 	var PROPERTYSET = {
 
 		// Object3D is a superclass of Mesh
@@ -261,9 +272,14 @@ define(["three"], function(THREE) {
 
 	];
 
-	// Opcodes
+	/**
+	 * Protocol opcodes
+	 */
 	var OP = {
-		DICT: 		 	0xFD,	// A plain dictionary
+		EXTENDED: 		0xFF,	// An extended opcode
+		DICT: 			0xFE,	// A dictionary of primitives
+		TAG: 			0xFC,	// Tag the next primitive as a named  bundle object
+		REF_TAG: 	 	0xFD,	// Refer to another named primitive (in this or other bundles)
 		UNDEFINED: 	 	0xF8,	// Undefined primitive
 		NULL: 		 	0xF9,	// NULL Primitive
 		FALSE: 		 	0xFA,	// False primitive
@@ -287,13 +303,15 @@ define(["three"], function(THREE) {
 		NUMBER_N: 	 	0x00, 	// Consecutive, up to 16 numbers of same type
 	}
 
-	// Number types
+	/**
+	 * Numerical types in the binary protocol
+	 */
 	var NUMTYPE = {
-		INT8 	: 0x00, UINT8 	: 0x01,	// Integers 8-bit
-		INT16 	: 0x02, UINT16 	: 0x03, // Integers 16-bit
-		INT32   : 0x04, UINT32  : 0x05, // Integers 32-bit
-		FLOAT32 : 0x06, FLOAT64 : 0x07, // Float of 32 and 64 bit
-		INT24   : 0x08, UINT24  : 0x09, // Integers 24-bit
+		INT8 	: 0x00,		UINT8 	: 0x01,	// Integers 8-bit
+		INT16 	: 0x02,		UINT16 	: 0x03, // Integers 16-bit
+		INT32   : 0x04,		UINT32  : 0x05, // Integers 32-bit
+		FLOAT32 : 0x06,		FLOAT64 : 0x07, // Float of 32 and 64 bit
+		INT24   : 0x08,		UINT24  : 0x09, // Integers 24-bit
 	};
 
 	/**
@@ -306,15 +324,15 @@ define(["three"], function(THREE) {
 	/**
 	 * Expose tables and opcodes
 	 */
+	BinaryDecoder.OP = OP;
 	BinaryDecoder.ENTITIES = ENTITIES;
 	BinaryDecoder.PROPERTIES = PROPERTIES;
-	BinaryDecoder.OP = OP;
 	BinaryDecoder.NUMTYPE = NUMTYPE;
 
 	/**
 	 * Load a binary stream
 	 */
-	BinaryDecoder.prototype.load = function( url, callback ) {
+	BinaryDecoder.prototype.load = function( url, database, callback ) {
 
 		var req = new XMLHttpRequest();
 		req.open('GET', url);
@@ -328,7 +346,7 @@ define(["three"], function(THREE) {
 
 			var buffer = req.response,
 				dataview = new DataView(buffer),
-				offset = 0,	prevOp = 0, currOp = 0,
+				offset = 0,	prevOp = 0, currOp = 0, dataEnd = 0,
 				compactBuf = [], crossRef = [],
 				viewUint8 = new Uint8Array(buffer),
 				viewInt8 = new Int8Array(buffer),
@@ -446,6 +464,15 @@ define(["three"], function(THREE) {
 				// Get next opcode
 				var op = viewUint8[offset++];
 
+				// Get primitive tag, if any
+				var tag = undefined;
+				if (op == OP.TAG) {
+					// Update tag name
+					tag = keyIndex[ dataview.getUint16( (offset+=2)-2, true ) ];
+					// Get next opcode
+					op = viewUint8[offset++];
+				}
+
 				// Skip PAD_ALIGN opcodes
 				if ((op & 0xF8) == 0xF0) {
 					offset += (op & 0x07) - 1;
@@ -467,6 +494,7 @@ define(["three"], function(THREE) {
 				}
 
 				// Handle simple opcodes
+				var result = undefined;
 				switch (op) {
 
 					// -----------------------
@@ -474,59 +502,85 @@ define(["three"], function(THREE) {
 					// -----------------------
 
 					case OP.UNDEFINED:
-						return undefined;
+						result = undefined;
+						break;
 
 					case OP.NULL:
-						return null;
+						result = null;
+						break;
 
 					case OP.FALSE:
-						return false;
+						result = false;
+						break;
 
 					case OP.TRUE:
-						return true;
+						result = true;
+						break;
 
 					// -----------------------
 					//  Strings
 					// -----------------------
 
 					case OP.STRING_8:
-						return getString( viewUint8[offset++] );
+						result = getString( viewUint8[offset++] );
+						break;
 
 					case OP.STRING_16:
-						return getString( dataview.getUint16( (offset+=2)-2, true ) );
+						result = getString( dataview.getUint16( (offset+=2)-2, true ) );
+						break;
 
 					case OP.STRING_32:
-						return getString( dataview.getUint32( (offset+=4)-4, true ) );
+						result = getString( dataview.getUint32( (offset+=4)-4, true ) );
+						break;
 
 					// -----------------------
 					//  Arrays
 					// -----------------------
 
 					case OP.ARRAY_EMPTY:
-						return [ ];
+						result = [ ];
+						break;
 
 					case OP.ARRAY_X_8:
-						return getArray( viewUint8[offset++] );
+						result = getArray( viewUint8[offset++] );
+						break;
 
 					case OP.ARRAY_X_16:
-						return getArray( dataview.getUint16( (offset+=2)-2, true ) );
+						result = getArray( dataview.getUint16( (offset+=2)-2, true ) );
+						break;
 
 					case OP.ARRAY_X_32:
-						return getArray( dataview.getUint32( (offset+=4)-4, true ) );
+						result = getArray( dataview.getUint32( (offset+=4)-4, true ) );
+						break;
 
 					// -----------------------
 					//  Dictionary
 					// -----------------------
 
 					case OP.DICT:
-						return getDict( viewUint8[offset++] );
+						result = getDict( viewUint8[offset++] );
+						break;
 
 					// -----------------------
 					//  Cross-reference
 					// -----------------------
 
 					case OP.REF_16:
-						return crossRef[ dataview.getUint16( (offset+=2)-2, true ) ];
+						result = crossRef[ dataview.getUint16( (offset+=2)-2, true ) ];
+						break;
+
+					case OP.REF_TAG:
+
+						// Get named tag from database
+						var refTag = keyIndex[ dataview.getUint16( (offset+=2)-2, true ) ];
+						result = database[ refTag ];
+
+						// Log errors
+						if (result === undefined) {
+							console.warn("Could not import external tag '"+refTag+"'");
+						}
+
+						break;
 
 					// -----------------------
 					//  Comlpex Opcodes
@@ -539,25 +593,32 @@ define(["three"], function(THREE) {
 							b64 = (op & 0x78) >> 3; // Bits 6:3
 
 						if ((op & 0xF8) == 0xE8) { /* STRING_3 */
-							return getString( b20 );
+							result = getString( b20 );
+							break;
 
 						} else if ((op & 0xF8) == 0xC0) { /* NUMBER_1 */
-							return getNum( b20 );
+							result = getNum( b20 );
+							break;
 
 						} else if ((op & 0xF8) == 0xC8) { /* ARRAY_8 */
-							return getNumberArray( viewUint8[offset++], b20 );
+							result = getNumberArray( viewUint8[offset++], b20 );
+							break;
 
 						} else if ((op & 0xF8) == 0xD0) { /* ARRAY_16 */
-							return getNumberArray( dataview.getUint16( (offset+=2)-2, true ), b20 );
+							result = getNumberArray( dataview.getUint16( (offset+=2)-2, true ), b20 );
+							break;
 
 						} else if ((op & 0xF8) == 0xD8) { /* ARRAY_32 */
-							return getNumberArray( dataview.getUint32( (offset+=4)-4, true ), b20 );
+							result = getNumberArray( dataview.getUint32( (offset+=4)-4, true ), b20 );
+							break;
 
 						} else if ((op & 0xE0) == 0x80) { /* ENTITY_5 */
-							return getEntity( b40 );
+							result = getEntity( b40 );
+							break;
 
 						} else if ((op & 0xE0) == 0xA0) { /* ENTITY_13 */
-							return getEntity( (b40 << 8) + viewUint8[offset++] );
+							result = getEntity( (b40 << 8) + viewUint8[offset++] );
+							break;
 
 						} else if ((op & 0x80) == 0x00) { /* NUMBER_N */
 
@@ -567,7 +628,8 @@ define(["three"], function(THREE) {
 								compactBuf.push( getNum( b20 ) );
 
 							// Pop firt
-							return compactBuf.shift();
+							result = compactBuf.shift();
+							break;
 
 						} else {
 
@@ -581,11 +643,15 @@ define(["three"], function(THREE) {
 
 				}
 
+				// If we have a tag, store it in database
+				if (tag) database[tag] = result;
+				return result;
+
 			}
 
 			// Populate key index
 			var indexSize = dataview.getUint16( viewUint8.length - 2, true );
-			offset = viewUint8.length - indexSize;
+			dataEnd = offset = viewUint8.length - indexSize;
 			while (true) {
 				keyIndex.push( getPrimitive() );
 				// Check if we reached the end
@@ -594,11 +660,14 @@ define(["three"], function(THREE) {
 			} 
 			offset = 0;
 
-			// Fire callback with first object 
-			var obj = getPrimitive();
-			console.timeEnd( 'BinaryBundle' );
+			// Read all primitives from file
+			var primitive, all = [];
+			while (offset < dataEnd)
+				all.push( getPrimitive() );
 
-			callback( obj );
+			// Finished loading
+			console.timeEnd( 'BinaryBundle' );
+			callback( all );
 
 		}
 	}

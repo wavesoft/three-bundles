@@ -98,7 +98,14 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "../binary"], funct
 		// Dictionary key lokup
 		this.keyDictIndex = [ ];
 
+		// Open write stream
 		this.stream = fs.createWriteStream( filename );
+
+		// Write metadata
+		this.writePrimitive({
+			'name': bundleName
+		});
+
 	};
 
 	/**
@@ -428,7 +435,7 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "../binary"], funct
 		var dbRef = this.dbObjects.indexOf(v);
 		if (dbRef >= 0) {
 			if (this.logTag) console.log("TAG @"+this.offset+": import="+this.dbTags[dbRef]);
-			this.writeUint8( OP.REF_TAG );
+			this.writeUint8( OP.IMPORT );
 			this.writeUint16( this.getKeyIndex(this.dbTags[dbRef]) );
 			return;
 		}
@@ -436,7 +443,7 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "../binary"], funct
 		// If we have a tag, tag this primitive first
 		if (tag) {
 			if (this.logTag) console.log("TAG @"+this.offset+": export="+tag);
-			this.writeUint8( OP.TAG );
+			this.writeUint8( OP.EXPORT );
 			this.writeUint16( this.getKeyIndex(tag) );
 
 			// Update database

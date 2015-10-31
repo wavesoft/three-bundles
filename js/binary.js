@@ -278,8 +278,8 @@ define(["three"], function(THREE) {
 	var OP = {
 		EXTENDED: 		0xFF,	// An extended opcode
 		DICT: 			0xFE,	// A dictionary of primitives
-		TAG: 			0xFC,	// Tag the next primitive as a named  bundle object
-		REF_TAG: 	 	0xFD,	// Refer to another named primitive (in this or other bundles)
+		EXPORT: 		0xFC,	// Tag the next primitive as a named  bundle object
+		IMPORT: 	 	0xFD,	// Refer to another named primitive (in this or other bundles)
 		UNDEFINED: 	 	0xF8,	// Undefined primitive
 		NULL: 		 	0xF9,	// NULL Primitive
 		FALSE: 		 	0xFA,	// False primitive
@@ -350,7 +350,7 @@ define(["three"], function(THREE) {
 				compactBuf = [], crossRef = [],
 				viewUint8 = new Uint8Array(buffer),
 				viewInt8 = new Int8Array(buffer),
-				keyIndex = [ ];
+				keyIndex = [ ], meta = { };
 
 			function getNum(type) {
 				if (type == NUMTYPE.INT8) {
@@ -466,7 +466,7 @@ define(["three"], function(THREE) {
 
 				// Get primitive tag, if any
 				var tag = undefined;
-				if (op == OP.TAG) {
+				if (op == OP.EXPORT) {
 					// Update tag name
 					tag = keyIndex[ dataview.getUint16( (offset+=2)-2, true ) ];
 					// Get next opcode
@@ -569,7 +569,7 @@ define(["three"], function(THREE) {
 						result = crossRef[ dataview.getUint16( (offset+=2)-2, true ) ];
 						break;
 
-					case OP.REF_TAG:
+					case OP.IMPORT:
 
 						// Get named tag from database
 						var refTag = keyIndex[ dataview.getUint16( (offset+=2)-2, true ) ];
@@ -659,6 +659,13 @@ define(["three"], function(THREE) {
 					break;
 			} 
 			offset = 0;
+
+			// Get Primitive-0 that contains the bundle metadata
+			meta = getPrimitive();
+			if (meta['name'] == undefined) {
+				console.error("This doesn't look like a valid 3BD archive");
+				return;
+			}
 
 			// Read all primitives from file
 			var primitive, all = [];

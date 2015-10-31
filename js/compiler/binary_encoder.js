@@ -13,10 +13,12 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "../binary"], funct
 
 	// Override fake DOM
 	var mock = new MockBrowser.mocks.MockBrowser();
-	ENTITIES[20][0] = mock.getDocument().createElement('img').constructor;
-	ENTITIES[20][2] = function( values ) {
+	ENTITIES[26][0] = mock.getDocument().createElement('img').constructor;
+	ENTITIES[26][3] = function( values ) {
 
 		var fname = values[0];
+		console.log("Loading",fname);
+
 		var buf = fs.readFileSync( values[0] ),
 			ext = values[0].split(".").pop().toLowerCase(),
 			contentType = "";
@@ -68,9 +70,12 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "../binary"], funct
 		this.logRef = false;
 		this.logAlign = false;
 		this.logEntity = false;
+		this.logCompact = false;
 
 		// Cross-reference lookup table
 		this.encodedReferences = [ ];
+		this.useCrossRef = 2;
+		this.useCompact = true;
 
 		// Dictionary key lokup
 		this.keyDictIndex = [ ];
@@ -364,11 +369,11 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "../binary"], funct
 
 				// Check unsigned bounds
 				if (max < 256) {
-					return NUMTYPE.INT8;
+					return NUMTYPE.UINT8;
 				} else if (max < 65536) {
-					return NUMTYPE.INT16;
+					return NUMTYPE.UINT16;
 				} else {
-					return NUMTYPE.INT32;
+					return NUMTYPE.UINT32;
 				}
 
 			}
@@ -468,6 +473,53 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "../binary"], funct
 	 */
 	BinaryEncoder.prototype.writeEncodedDict = function( srcDict ) {
 
+		// // Handle ByRef cross-references
+		// if (this.useCrossRef > 0) {
+		// 	var refID = this.encodedReferences.indexOf( srcDict );
+		// 	if (refID >= 0) {
+		// 		// Write reference
+		// 		if (this.logRef) console.log("PTR @"+this.offset+": ref=",refID,"(dict)");
+		// 		this.writeUint8( OP.REF_16 );
+		// 		this.writeUint16( refID );
+		// 		return
+		// 	}
+		// }
+
+		// // Handle ByVal cross-references
+		// if (this.useCrossRef > 1) {
+		// 	for (var i=0; i<this.encodedReferences.length; i++) {
+		// 		if (this.encodedReferences[i].constructor == ({}).constructor) {
+
+		// 			// Check if properties match
+		// 			var propmatch = true;
+		// 			for (var k in srcDict) {
+		// 				if (!srcDict.hasOwnProperty(k)) continue;
+		// 				if (this.encodedReferences[i][k] !== srcDict[k]) {
+		// 					propmatch = false;
+		// 					break;
+		// 				}
+		// 			}
+
+		// 			// If all properties match, we found a reference
+		// 			if (propmatch) {
+		// 				if (this.logRef) console.log("CPY @"+this.offset+": ref=",i, "(dict)");
+		// 				this.writeUint8( OP.REF_16 );
+		// 				this.writeUint16( i );
+		// 				return;
+		// 			}
+		// 		}
+		// 	}
+		// }
+
+		// // Keep dict on references
+		// if (this.useCrossRef > 0) {
+		// 	if (this.encodedReferences.length < 65536) {
+		// 		this.encodedReferences.push(srcDict);
+		// 		if (this.encodedReferences.length == 65536)
+		// 			console.error("References table is full");
+		// 	}
+		// }
+
 		// Count own properties
 		var propCount = 0;
 		for (var k in srcDict) {
@@ -501,6 +553,55 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "../binary"], funct
 			return;
 		}
 
+		// // Handle ByRef cross-references
+		// if (this.useCrossRef > 0) {
+		// 	var refID = this.encodedReferences.indexOf( srcArray );
+		// 	if (refID >= 0) {
+		// 		// Write reference
+		// 		if (this.logRef) console.log("PTR @"+this.offset+": ref=",refID,"(array)");
+		// 		this.writeUint8( OP.REF_16 );
+		// 		this.writeUint16( refID );
+		// 		return
+		// 	}
+		// }
+
+		// // Handle ByVal cross-references
+		// if (this.useCrossRef > 1) {
+		// 	for (var i=0; i<this.encodedReferences.length; i++) {
+		// 		if (this.encodedReferences[i].constructor == srcArray.constructor) {
+
+		// 			// Check if properties match
+		// 			if (this.encodedReferences[i].length != srcArray.length) continue;
+
+		// 			// Check if properties match
+		// 			var propmatch = true;
+		// 			for (var j=0; j<srcArray.length; j++) {
+		// 				if (this.encodedReferences[i][j] !== srcArray[j]) {
+		// 					propmatch = false;
+		// 					break;
+		// 				}
+		// 			}
+
+		// 			// If all properties match, we found a reference
+		// 			if (propmatch) {
+		// 				if (this.logRef) console.log("CPY @"+this.offset+": ref=",i, "(array)");
+		// 				this.writeUint8( OP.REF_16 );
+		// 				this.writeUint16( i );
+		// 				return;
+		// 			}
+		// 		}
+		// 	}
+		// }
+
+		// // Keep dict on references
+		// if (this.useCrossRef > 0) {
+		// 	if (this.encodedReferences.length < 65536) {
+		// 		this.encodedReferences.push(srcArray);
+		// 		if (this.encodedReferences.length == 65536)
+		// 			console.error("References table is full");
+		// 	}
+		// }
+
 		// Get array type
 		var arrayType = this.getNumArrayType( srcArray );
 
@@ -527,29 +628,31 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "../binary"], funct
 
 				// Check if we can compact the following  up to 16 numerical values
 				var canCompact = false;
-				for (var j=15; j>1; j--) {
-					if (i+j >= srcArray.length) continue;
+				if (this.useCompact) {
+					for (var j=15; j>1; j--) {
+						if (i+j >= srcArray.length) continue;
 
-					// Check if the current slice is numeric
-					var slice = srcArray.slice(i,i+j),
-						sliceType = this.getNumArrayType( slice );
-					if (sliceType !== undefined) {
+						// Check if the current slice is numeric
+						var slice = srcArray.slice(i,i+j),
+							sliceType = this.getNumArrayType( slice );
+						if (sliceType !== undefined) {
 
-						// Write opcode
-						if (this.logArray) console.log(" >< @"+this.offset+": compact, len=", j);
-						this.writeUint8(
-								OP.NUMBER_N |	// We have N consecutive numbers
-								(j << 3)    |	// N=j
-								sliceType		// Consecutive numbers type
-							);
+							// Write opcode
+							if (this.logCompact) console.log(" >< @"+this.offset+": compact, len=", j,", type=", _TYPENAME[sliceType], ", values=",slice);
+							this.writeUint8(
+									OP.NUMBER_N |	// We have N consecutive numbers
+									(j << 3)    |	// N=j
+									sliceType		// Consecutive numbers type
+								);
 
-						// Write values
-						this.writeNum( slice, sliceType );
+							// Write values
+							this.writeNum( slice, sliceType );
 
-						// We used compact
-						canCompact = true;
-						i += j-1;
-						break;
+							// We used compact
+							canCompact = true;
+							i += j-1;
+							break;
+						}
 					}
 				}
 
@@ -637,13 +740,15 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "../binary"], funct
 	BinaryEncoder.prototype.writeEncodedEntity = function( object ) {
 
 		// Handle byref cross-references
-		var refID = this.encodedReferences.indexOf(object);
-		if ((refID >= 0) && (refID < 65536)) {
-			// Write reference
-			if (this.logRef) console.log("PTR @"+this.offset+": ref=",refID);
-			this.writeUint8( OP.REF_16 );
-			this.writeUint16( refID );
-			return
+		if (this.useCrossRef > 0) {
+			var refID = this.encodedReferences.indexOf(object);
+			if (refID >= 0) {
+				// Write reference
+				if (this.logRef) console.log("PTR @"+this.offset+": ref=",refID);
+				this.writeUint8( OP.REF_16 );
+				this.writeUint16( refID );
+				return
+			}
 		}
 
 		// Get the entity ID of this object
@@ -662,30 +767,38 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "../binary"], funct
 		}
 
 		// Handle ByVal cross-references
-		for (var i=0; i<this.encodedReferences.length; i++) {
-			if (this.encodedReferences[i] instanceof ENTITIES[eid][0]) {
+		if (this.useCrossRef > 1) {
+			for (var i=0; i<this.encodedReferences.length; i++) {
+				if (this.encodedReferences[i] instanceof ENTITIES[eid][0]) {
 
-				// Check if properties match
-				var propmatch = true;
-				for (var j=0; j<PROPERTIES[eid].length; j++) {
-					if (this.encodedReferences[i][PROPERTIES[eid][j]] != object[PROPERTIES[eid][j]]) {
-						propmatch = false;
-						break;
+					// Check if properties match
+					var propmatch = true;
+					for (var j=0; j<PROPERTIES[eid].length; j++) {
+						if (this.encodedReferences[i][PROPERTIES[eid][j]] !== object[PROPERTIES[eid][j]]) {
+							propmatch = false;
+							break;
+						}
 					}
-				}
 
-				// If all properties match, we found a reference
-				if (propmatch) {
-					if (this.logRef) console.log("CPY @"+this.offset+": ref=",i);
-					this.writeUint8( OP.REF_16 );
-					this.writeUint16( i );
-					return;
+					// If all properties match, we found a reference
+					if (propmatch) {
+						if (this.logRef) console.log("CPY @"+this.offset+": ref=",i);
+						this.writeUint8( OP.REF_16 );
+						this.writeUint16( i );
+						return;
+					}
 				}
 			}
 		}
 
 		// Keep object in cross-referencing database
-		this.encodedReferences.push(object);
+		if (this.useCrossRef > 0) {
+			if (this.encodedReferences.length < 65536) {
+				this.encodedReferences.push(object);
+				if (this.encodedReferences.length == 65536)
+					console.error("References table is full");
+			}
+		}
 
 		// Prepare property table
 		var propertyTable = new Array( PROPERTIES[eid].length );
@@ -700,8 +813,8 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "../binary"], funct
 		}
 
 		// Post-process entities
-		if (ENTITIES[eid].length > 2)
-			ENTITIES[eid][2]( propertyTable );
+		if (ENTITIES[eid].length > 3)
+			ENTITIES[eid][3]( propertyTable );
 
 		// Start entity
 		if (eid < 32) {

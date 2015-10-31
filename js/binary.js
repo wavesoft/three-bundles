@@ -4,6 +4,25 @@
  */
 define(["three"], function(THREE) {
 
+	// Factories
+	var FACTORY = {
+
+		/**
+		 * Default factory
+		 */
+		'Default': function(ClassName) {
+			return new ClassName();
+		},
+
+		/**
+		 * Create an object without using new constructor
+		 */
+		'Unconstructed': function(ClassName) {
+			return Object.create(ClassName.prototype);
+		},
+
+	}
+
 	// Initializers
 	var INIT = {
 
@@ -42,6 +61,27 @@ define(["three"], function(THREE) {
 
 			// Create data URI
 			values[0] = 'data:image/' + ctype + ';base64,' + btoa(String.fromCharCode.apply(null, payload));
+		},
+
+		/**
+		 * Call animation clip constructor
+		 */
+		'AnimationClip': function(values, instance) {
+			instance.constructor.call(
+					instance, values[0], /* name */
+						 	  values[1], /* duration */
+						 	  values[2]  /* trakcs */
+				);
+		},
+
+		/**
+		 * Call keyframe constructor
+		 */
+		'KeyframeTrack': function(values, instance) {
+			instance.constructor.call(
+					instance, values[0], /* name */
+							  values[1]  /* keys */
+				);
 		}
 
 	};
@@ -49,36 +89,71 @@ define(["three"], function(THREE) {
 	// Entity Type
 	var ENTITIES = [
 		
-		[THREE.Vector2, 			INIT.Empty ],
-		[THREE.Vector3, 			INIT.Empty ],
-		[THREE.Face3, 				INIT.Empty ],
-		[THREE.Color, 				INIT.Empty ],
-		[THREE.Quaternion,			INIT.Empty ],
-		[THREE.Euler,				INIT.Empty ],
+		[THREE.Vector2, 								FACTORY.Default, 				INIT.Empty ],
+		[THREE.Vector3, 								FACTORY.Default, 				INIT.Empty ],
+		[THREE.Face3, 									FACTORY.Default, 				INIT.Empty ],
+		[THREE.Color, 									FACTORY.Default, 				INIT.Empty ],
+		[THREE.Quaternion,								FACTORY.Default, 				INIT.Empty ],
+		[THREE.Euler,									FACTORY.Default, 				INIT.Empty ],
 
-		[THREE.Matrix3, 			INIT.Empty ],
-		[THREE.Matrix4, 			INIT.Empty ],
+		[THREE.Matrix3, 								FACTORY.Default, 				INIT.Empty ],
+		[THREE.Matrix4, 								FACTORY.Default, 				INIT.Empty ],
 
-		[THREE.Geometry, 			INIT.Empty ],
-		[THREE.BufferGeometry, 		INIT.Empty ],
-		[THREE.BufferAttribute, 	INIT.Empty ],
+		[THREE.Geometry, 								FACTORY.Default, 				INIT.Empty ],
+		[THREE.BufferGeometry, 							FACTORY.Default, 				INIT.Empty ],
+		[THREE.BufferAttribute, 						FACTORY.Default, 				INIT.Empty ],
 
-		[THREE.Sphere, 				INIT.Empty ],
+		[THREE.AnimationClip, 							FACTORY.Unconstructed,			INIT.AnimationClip ],
+		[THREE.VectorKeyframeTrack, 					FACTORY.Unconstructed,			INIT.KeyframeTrack ],
+		[THREE.QuaternionKeyframeTrack, 				FACTORY.Unconstructed,			INIT.KeyframeTrack ],
+		[THREE.NumberKeyframeTrack, 					FACTORY.Unconstructed,			INIT.KeyframeTrack ],
+		[THREE.BooleanKeyframeTrack, 					FACTORY.Unconstructed,			INIT.KeyframeTrack ],
+		[THREE.StringKeyframeTrack, 					FACTORY.Unconstructed,			INIT.KeyframeTrack ],
 
-		[THREE.Mesh, 				INIT.Object3D ],
-		[THREE.Object3D, 			INIT.Object3D ],
+		[THREE.Sphere, 									FACTORY.Default, 				INIT.Empty ],
 
-		[THREE.MeshBasicMaterial, 	INIT.Empty ],
-		[THREE.MeshPhongMaterial, 	INIT.Empty ],
-		[THREE.MeshLambertMaterial, INIT.Empty ],
-		[THREE.Material, 			INIT.Empty ],
+		[THREE.Mesh, 									FACTORY.Default, 				INIT.Object3D ],
+		[THREE.Object3D, 								FACTORY.Default, 				INIT.Object3D ],
 
-		[THREE.CompressedTexture, 	INIT.Texture ],
-		[THREE.Texture, 			INIT.Texture ],
+		[THREE.MeshBasicMaterial, 						FACTORY.Default, 				INIT.Empty ],
+		[THREE.MeshPhongMaterial, 						FACTORY.Default, 				INIT.Empty ],
+		[THREE.MeshLambertMaterial, 					FACTORY.Default, 				INIT.Empty ],
+		[THREE.Material, 								FACTORY.Default, 				INIT.Empty ],
 
-		[(typeof Image == 'undefined' ? null : Image), INIT.Image],
+		[THREE.CompressedTexture, 						FACTORY.Default, 				INIT.Texture ],
+		[THREE.Texture, 								FACTORY.Default, 				INIT.Texture ],
+		[(typeof Image == 'undefined' ? null : Image),	FACTORY.Default, 				INIT.Image],
 
 	];
+
+	// Reusable property sets
+	var PROPERTYSET = {
+
+		// Object3D is a superclass of Mesh
+		Object3D	: [
+			'children', 'up', 'matrix', 'matrixWorld', 'visible', 'castShadow', 
+			'receiveShadow', 'frustumCulled', 'renderOrder'
+		],
+
+		// Key frame track
+		KeyframeTrack: [
+			'name', 'keys', 'lastIndex', 'result', 'result'
+		],
+
+		// Material is superclass of many materials
+		Material : [
+			'side', 'opacity', 'blending', 'blendSrc', 'blendDst', 'blendEquation', 'depthFunc',
+			'polygonOffsetFactor', 'polygonOffsetUnits', 'alphaTest', 'overdraw',
+			'transparent', 'depthTest', 'depthWrite', 'colorWrite', 'polygonOffset', 'visible'
+		],
+
+		// Texture
+		Texture: [ 
+			'image', 'mipmaps', 'flipY', 'mapping', 'wrapS', 'wrapT', 'magFilter', 'minFilter',
+			'anisotropy', 'format', 'type', 'offset', 'repeat', 'unpackAlignment'
+		],
+
+	};
 
 	// Property index for every entity type
 	var PROPERTIES = [
@@ -102,46 +177,44 @@ define(["three"], function(THREE) {
 		[ 'elements' ],
 
 		// THREE.Geometry
-		[ 'vertices', 'faces', 'faceVertexUvs', 'morphTargets', 'morphNormals', 'morphColors', 'boundingSphere' ],
+		[ 'vertices', 'faces', 'faceVertexUvs', 'morphTargets', 'morphNormals', 'morphColors', 'animations', 'boundingSphere' ],
 		// THREE.BufferGeometry
 		[ 'attributes', 'index' ],
 		// THREE.BufferAttribute
 		[ 'array', 'itemSize', 'dynamic', 'updateRange' ],
 
+		// THREE.AnimationClip
+		[ 'name', 'duration', 'tracks', 'results' ],
+		// THREE.VectorKeyframeTrack
+		PROPERTYSET.KeyframeTrack,
+		// THREE.QuaternionKeyframeTrack
+		PROPERTYSET.KeyframeTrack,
+		// THREE.NumberKeyframeTrack
+		PROPERTYSET.KeyframeTrack,
+		// THREE.BooleanKeyframeTrack
+		PROPERTYSET.KeyframeTrack,
+		// THREE.StringKeyframeTrack
+		PROPERTYSET.KeyframeTrack,
+
 		// THREE.Sphere
 		[ 'center', 'radius' ],
 
 		// THREE.Mesh
-		[
-			// Basic
-			'children', 'up', 'matrix', 'matrixWorld', 'visible', 'castShadow', 'receiveShadow', 'frustumCulled', 'renderOrder',
-			// Mesh
+		PROPERTYSET.Object3D.concat([
 			'geometry', 'material'
-		],
+		]),
 		// THREE.Object3D
-		[
-			'children', 'up', 'matrix', 'matrixWorld', 'visible', 'castShadow', 'receiveShadow', 'frustumCulled', 'renderOrder'
-		],
+		PROPERTYSET.Object3D,
 
 		// THREE.MeshBasicMaterial
-		[ 
-			// Basic
-			'side', 'opacity', 'blending', 'blendSrc', 'blendDst', 'blendEquation', 'depthFunc',
-			'polygonOffsetFactor', 'polygonOffsetUnits', 'alphaTest', 'overdraw',
-			'transparent', 'depthTest', 'depthWrite', 'colorWrite', 'polygonOffset', 'visible',
-			// MeshBasicMaterial
+		PROPERTYSET.Material.concat([
 			'color', 'map', 'aoMap', 'aoMapIntensity', 'specularMap', 'alphaMap', 'envMap',
 			'combine', 'reflectivity', 'refractionRatio', 'fog', 'shading', 'wireframe',
 			'wireframeLinewidth', 'wireframeLinecap', 'wireframeLinejoin',
 			'vertexColors', 'skinning', 'morphTargets'
-		],
+		]),
 		// THREE.MeshPhongMaterial
-		[ 
-			// Basic
-			'side', 'opacity', 'blending', 'blendSrc', 'blendDst', 'blendEquation', 'depthFunc',
-			'polygonOffsetFactor', 'polygonOffsetUnits', 'alphaTest', 'overdraw',
-			'transparent', 'depthTest', 'depthWrite', 'colorWrite', 'polygonOffset', 'visible',
-			// MeshBasicMaterial
+		PROPERTYSET.Material.concat([
 			'color', 'emissive', 'specular', 'shininess', 
 			'metal', 'map', 'lightMap', 'lightMapIntensity',
 			'aoMap', 'aoMapIntensity', 'emissiveMap', 
@@ -151,32 +224,21 @@ define(["three"], function(THREE) {
 			'refractionRatio', 'fog', 'shading', 
 			'wireframe', 'wireframeLinewidth', 'vertexColors',
 			'skinning', 'morphTargets', 'morphNormals'
-		],
+		]),
 		// THREE.MeshLambertMaterial
-		[ 
-			// Basic
-			'side', 'opacity', 'blending', 'blendSrc', 'blendDst', 'blendEquation', 'depthFunc',
-			'polygonOffsetFactor', 'polygonOffsetUnits', 'alphaTest', 'overdraw',
-			'transparent', 'depthTest', 'depthWrite', 'colorWrite', 'polygonOffset', 'visible',
-			// MeshBasicMaterial
+		PROPERTYSET.Material.concat([
 			'color', 'emissive', 'map', 'specularMap', 'alphaMap', 'envMap', 
 			'combine', 'reflectivity', 'fog', 
 			'wireframe', 'wireframeLinewidth', 'vertexColors',
 			'skinning', 'morphTargets', 'morphNormals'
-		],
+		]),
 		// THREE.Material
-		[ 
-			'side', 'opacity', 'blending', 'blendSrc', 'blendDst', 'blendEquation', 'depthFunc',
-			'polygonOffsetFactor', 'polygonOffsetUnits', 'alphaTest', 'overdraw',
-			'transparent', 'depthTest', 'depthWrite', 'colorWrite', 'polygonOffset', 'visible'
-		],
+		PROPERTYSET.Material,
 
 		// THREE.CompressedTexture
-		[ 'image', 'mipmaps', 'flipY', 'mapping', 'wrapS', 'wrapT', 'magFilter', 'minFilter',
-		  'anisotropy', 'format', 'type', 'offset', 'repeat', 'unpackAlignment' ],
+		PROPERTYSET.Texture,
 		// THREE.Texture
-		[ 'image', 'mipmaps', 'flipY', 'mapping', 'wrapS', 'wrapT', 'magFilter', 'minFilter',
-		  'anisotropy', 'format', 'type', 'offset', 'repeat', 'unpackAlignment' ],
+		PROPERTYSET.Texture,
 
 		// Image
 		[ 'src' ],
@@ -185,28 +247,28 @@ define(["three"], function(THREE) {
 
 	// Opcodes
 	var OP = {
-		DICT: 		 0xFD,	// A plain dictionary
-		UNDEFINED: 	 0xF8,	// Undefined primitive
-		NULL: 		 0xF9,	// NULL Primitive
-		FALSE: 		 0xFA,	// False primitive
-		TRUE: 		 0xFB,	// True primitive
-		PAD_ALIGN: 	 0xF0,	// Padding characters for alignment
-		STRING_8: 	 0xE0,	// A string with 8-bit index
-		STRING_16: 	 0xE1,	// A string with 16-bit index
-		STRING_32: 	 0xE2,	// A string with 32-bit index
-		ARRAY_X_8:	 0xE3,	// An element array with 8-bit index
-		ARRAY_X_16:	 0xE4,	// An element array with 16-bit index
-		ARRAY_X_32:	 0xE5,	// An element array with 32-bit index
-		ARRAY_EMPTY: 0xE6, 	// An empty array
-		REF_16: 	 0xE7, 	// A reference to a previous entity
-		STRING_3:	 0xE8,	// A string with 4-bit embedded index
-		NUMBER_1: 	 0xC0,	// A single number
-		ARRAY_8: 	 0xC8,	// A numeric array with 8-bit index
-		ARRAY_16: 	 0xD0,	// A numeric array with 16-bit index
-		ARRAY_32: 	 0xD8,	// A numeric array with 32-bit index
-		ENTITY_5: 	 0x80,	// An entity with 5-bit embedded eid
-		ENTITY_13: 	 0xA0,	// An entity with 13-bit eid
-		NUMBER_N: 	 0x00, 	// Consecutive, up to 16 numbers of same type
+		DICT: 		 	0xFD,	// A plain dictionary
+		UNDEFINED: 	 	0xF8,	// Undefined primitive
+		NULL: 		 	0xF9,	// NULL Primitive
+		FALSE: 		 	0xFA,	// False primitive
+		TRUE: 		 	0xFB,	// True primitive
+		PAD_ALIGN: 	 	0xF0,	// Padding characters for alignment
+		STRING_8: 	 	0xE0,	// A string with 8-bit index
+		STRING_16: 	 	0xE1,	// A string with 16-bit index
+		STRING_32: 	 	0xE2,	// A string with 32-bit index
+		ARRAY_X_8:	 	0xE3,	// An element array with 8-bit index
+		ARRAY_X_16:	 	0xE4,	// An element array with 16-bit index
+		ARRAY_X_32:	 	0xE5,	// An element array with 32-bit index
+		ARRAY_EMPTY: 	0xE6, 	// An empty array
+		REF_16: 	 	0xE7, 	// A reference to a previous entity
+		STRING_3:	 	0xE8,	// A string with 4-bit embedded index
+		NUMBER_1: 	 	0xC0,	// A single number
+		ARRAY_8: 	 	0xC8,	// A numeric array with 8-bit index
+		ARRAY_16: 	 	0xD0,	// A numeric array with 16-bit index
+		ARRAY_32: 	 	0xD8,	// A numeric array with 32-bit index
+		ENTITY_5: 	 	0x80,	// An entity with 5-bit embedded eid
+		ENTITY_13: 	 	0xA0,	// An entity with 13-bit eid
+		NUMBER_N: 	 	0x00, 	// Consecutive, up to 16 numbers of same type
 	}
 
 	// Number types
@@ -285,6 +347,7 @@ define(["three"], function(THREE) {
 
 			function getArray( length ) {
 				var array = new Array( length );
+				// crossRef.push( array );
 				for (var i=0; i<length; i++)
 					array[i] = getPrimitive();
 				return array;
@@ -328,8 +391,8 @@ define(["three"], function(THREE) {
 						toString 	: function(){return this.name + ": " + this.message;}
 					};
 
-				// Instantiate entry
-				var instance = new ENTITIES[eid][0]();
+				// Call entity factory
+				var instance = ENTITIES[eid][1]( ENTITIES[eid][0] );
 
 				// Keep in cross-reference
 				crossRef.push( instance );
@@ -340,7 +403,7 @@ define(["three"], function(THREE) {
 					moreValues = [];
 
 				// Run configurator
-				moreValues = ENTITIES[eid][1]( values, instance );
+				moreValues = ENTITIES[eid][2]( values, instance );
 
 				// Iterate over properties
 				var props = PROPERTIES[eid];
@@ -362,6 +425,7 @@ define(["three"], function(THREE) {
 			function getDict( size ) {
 				// Create a dict
 				var dict = { };
+				// crossRef.push( dict );
 				for (var i=0; i<size; i++) {
 					var k = keyIndex[dataview.getUint16( (offset+=2)-2, true )];
 					var v = getPrimitive();

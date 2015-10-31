@@ -4,37 +4,34 @@
  */
 define(["three"], function(THREE) {
 
-	// Entity Type
-	var ENTITIES = [
-		
-		[THREE.Vector2, 			function(values) { } ],
-		[THREE.Vector3, 			function(values) { } ],
-		[THREE.Face3, 				function(values) { } ],
-		[THREE.Color, 				function(values) { } ],
-		[THREE.Quaternion,			function(values) { } ],
-		[THREE.Euler,				function(values) { } ],
+	// Initializers
+	var INIT = {
 
-		[THREE.Matrix3, 			function(values) { } ],
-		[THREE.Matrix4, 			function(values) { } ],
+		/**
+		 * Empty Initializer
+		 */
+		'Empty': function() { },
 
-		[THREE.Geometry, 			function(values) { } ],
-		[THREE.BufferGeometry, 		function(values) { } ],
-		[THREE.BufferAttribute, 	function(values) { } ],
+		/**
+		 * Update 'parent' property of each Object3D
+		 */
+		'Object3D': function( values, instance ) {
+			var children = values[0];
+			for (var i=0; i<children.length; i++)
+				children[i].parent = instance;
+		},
 
-		[THREE.Sphere, 				function(values) { } ],
+		/**
+		 * Textures needs update
+		 */
+		'Texture': function(values, instance) {
+			instance.needsUpdate = true;
+		},
 
-		[THREE.Mesh, 				function(values) { } ],
-		[THREE.Object3D, 			function(values) { } ],
-
-		[THREE.MeshBasicMaterial, 	function(values) { } ],
-		[THREE.MeshPhongMaterial, 	function(values) { } ],
-		[THREE.MeshLambertMaterial, function(values) { } ],
-		[THREE.Material, 			function(values) { } ],
-
-		[THREE.CompressedTexture, 	function(values) { return [ ['needsUpdate', true] ]; } ],
-		[THREE.Texture, 			function(values) { return [ ['needsUpdate', true] ]; } ],
-
-		[(typeof Image == 'undefined' ? null : Image), function( values ) {
+		/**
+		 * Convert image payload to base-64 encoded data URI
+		 */
+		'Image': function(values, instance) {
 
 			// Expand binary buffer to base-64 data URI
 			var ctype = (String.fromCharCode( values[0][0] ) + 
@@ -45,8 +42,41 @@ define(["three"], function(THREE) {
 
 			// Create data URI
 			values[0] = 'data:image/' + ctype + ';base64,' + btoa(String.fromCharCode.apply(null, payload));
+		}
 
-		}],
+	};
+
+	// Entity Type
+	var ENTITIES = [
+		
+		[THREE.Vector2, 			INIT.Empty ],
+		[THREE.Vector3, 			INIT.Empty ],
+		[THREE.Face3, 				INIT.Empty ],
+		[THREE.Color, 				INIT.Empty ],
+		[THREE.Quaternion,			INIT.Empty ],
+		[THREE.Euler,				INIT.Empty ],
+
+		[THREE.Matrix3, 			INIT.Empty ],
+		[THREE.Matrix4, 			INIT.Empty ],
+
+		[THREE.Geometry, 			INIT.Empty ],
+		[THREE.BufferGeometry, 		INIT.Empty ],
+		[THREE.BufferAttribute, 	INIT.Empty ],
+
+		[THREE.Sphere, 				INIT.Empty ],
+
+		[THREE.Mesh, 				INIT.Object3D ],
+		[THREE.Object3D, 			INIT.Object3D ],
+
+		[THREE.MeshBasicMaterial, 	INIT.Empty ],
+		[THREE.MeshPhongMaterial, 	INIT.Empty ],
+		[THREE.MeshLambertMaterial, INIT.Empty ],
+		[THREE.Material, 			INIT.Empty ],
+
+		[THREE.CompressedTexture, 	INIT.Texture ],
+		[THREE.Texture, 			INIT.Texture ],
+
+		[(typeof Image == 'undefined' ? null : Image), INIT.Image],
 
 	];
 
@@ -74,7 +104,7 @@ define(["three"], function(THREE) {
 		// THREE.Geometry
 		[ 'vertices', 'faces', 'faceVertexUvs', 'morphTargets', 'morphNormals', 'morphColors', 'boundingSphere' ],
 		// THREE.BufferGeometry
-		[ 'attributes' ],
+		[ 'attributes', 'index' ],
 		// THREE.BufferAttribute
 		[ 'array', 'itemSize', 'dynamic', 'updateRange' ],
 
@@ -273,13 +303,13 @@ define(["three"], function(THREE) {
 					return new Int16Array( buffer, ofs, length );
 				} else if (type == NUMTYPE.UINT16) {
 					offset += length * 2;
-					return new UInt16Array( buffer, ofs, length );
+					return new Uint16Array( buffer, ofs, length );
 				} else if (type == NUMTYPE.INT32) {
 					offset += length * 4;
 					return new Int32Array( buffer, ofs, length );
 				} else if (type == NUMTYPE.UINT32) {
 					offset += length * 4;
-					return new UInt32Array( buffer, ofs, length );
+					return new Uint32Array( buffer, ofs, length );
 				} else if (type == NUMTYPE.FLOAT32) {
 					offset += length * 4;
 					return new Float32Array( buffer, ofs, length );
@@ -310,7 +340,7 @@ define(["three"], function(THREE) {
 					moreValues = [];
 
 				// Run configurator
-				moreValues = ENTITIES[eid][1]( values );
+				moreValues = ENTITIES[eid][1]( values, instance );
 
 				// Iterate over properties
 				var props = PROPERTIES[eid];

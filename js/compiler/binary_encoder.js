@@ -473,53 +473,6 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "../binary"], funct
 	 */
 	BinaryEncoder.prototype.writeEncodedDict = function( srcDict ) {
 
-		// // Handle ByRef cross-references
-		// if (this.useCrossRef > 0) {
-		// 	var refID = this.encodedReferences.indexOf( srcDict );
-		// 	if (refID >= 0) {
-		// 		// Write reference
-		// 		if (this.logRef) console.log("PTR @"+this.offset+": ref=",refID,"(dict)");
-		// 		this.writeUint8( OP.REF_16 );
-		// 		this.writeUint16( refID );
-		// 		return
-		// 	}
-		// }
-
-		// // Handle ByVal cross-references
-		// if (this.useCrossRef > 1) {
-		// 	for (var i=0; i<this.encodedReferences.length; i++) {
-		// 		if (this.encodedReferences[i].constructor == ({}).constructor) {
-
-		// 			// Check if properties match
-		// 			var propmatch = true;
-		// 			for (var k in srcDict) {
-		// 				if (!srcDict.hasOwnProperty(k)) continue;
-		// 				if (this.encodedReferences[i][k] !== srcDict[k]) {
-		// 					propmatch = false;
-		// 					break;
-		// 				}
-		// 			}
-
-		// 			// If all properties match, we found a reference
-		// 			if (propmatch) {
-		// 				if (this.logRef) console.log("CPY @"+this.offset+": ref=",i, "(dict)");
-		// 				this.writeUint8( OP.REF_16 );
-		// 				this.writeUint16( i );
-		// 				return;
-		// 			}
-		// 		}
-		// 	}
-		// }
-
-		// // Keep dict on references
-		// if (this.useCrossRef > 0) {
-		// 	if (this.encodedReferences.length < 65536) {
-		// 		this.encodedReferences.push(srcDict);
-		// 		if (this.encodedReferences.length == 65536)
-		// 			console.error("References table is full");
-		// 	}
-		// }
-
 		// Count own properties
 		var propCount = 0;
 		for (var k in srcDict) {
@@ -552,55 +505,6 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "../binary"], funct
 			this.writeUint8( OP.ARRAY_EMPTY );
 			return;
 		}
-
-		// // Handle ByRef cross-references
-		// if (this.useCrossRef > 0) {
-		// 	var refID = this.encodedReferences.indexOf( srcArray );
-		// 	if (refID >= 0) {
-		// 		// Write reference
-		// 		if (this.logRef) console.log("PTR @"+this.offset+": ref=",refID,"(array)");
-		// 		this.writeUint8( OP.REF_16 );
-		// 		this.writeUint16( refID );
-		// 		return
-		// 	}
-		// }
-
-		// // Handle ByVal cross-references
-		// if (this.useCrossRef > 1) {
-		// 	for (var i=0; i<this.encodedReferences.length; i++) {
-		// 		if (this.encodedReferences[i].constructor == srcArray.constructor) {
-
-		// 			// Check if properties match
-		// 			if (this.encodedReferences[i].length != srcArray.length) continue;
-
-		// 			// Check if properties match
-		// 			var propmatch = true;
-		// 			for (var j=0; j<srcArray.length; j++) {
-		// 				if (this.encodedReferences[i][j] !== srcArray[j]) {
-		// 					propmatch = false;
-		// 					break;
-		// 				}
-		// 			}
-
-		// 			// If all properties match, we found a reference
-		// 			if (propmatch) {
-		// 				if (this.logRef) console.log("CPY @"+this.offset+": ref=",i, "(array)");
-		// 				this.writeUint8( OP.REF_16 );
-		// 				this.writeUint16( i );
-		// 				return;
-		// 			}
-		// 		}
-		// 	}
-		// }
-
-		// // Keep dict on references
-		// if (this.useCrossRef > 0) {
-		// 	if (this.encodedReferences.length < 65536) {
-		// 		this.encodedReferences.push(srcArray);
-		// 		if (this.encodedReferences.length == 65536)
-		// 			console.error("References table is full");
-		// 	}
-		// }
 
 		// Get array type
 		var arrayType = this.getNumArrayType( srcArray );

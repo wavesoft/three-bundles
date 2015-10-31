@@ -27,30 +27,66 @@ define(["three"], function(THREE) {
 	var INIT = {
 
 		/**
-		 * Empty Initializer
+		 * Default Initializer
 		 */
-		'Empty': function() { },
+		'Default': function( instance, properties, values ) {
+			for (var i=0; i<properties.length; i++) {
+				instance[properties[i]] = values[i];
+			}
+		},
 
 		/**
 		 * Update 'parent' property of each Object3D
 		 */
-		'Object3D': function( values, instance ) {
-			var children = values[0];
-			for (var i=0; i<children.length; i++)
-				children[i].parent = instance;
+		'Object3D': function( instance, properties, values ) {
+			INIT.Default(instance, properties, values);
+			for (var i=0; i<instance.children.length; i++)
+				instance.children[i].parent = instance;
+		},
+
+		/**
+		 * Recalculate morph target
+		 */
+		'Mesh': function( instance, properties, values ) {
+			INIT.Object3D( instance, properties, values );
+			instance.updateMorphTargets();
 		},
 
 		/**
 		 * Textures needs update
 		 */
-		'Texture': function(values, instance) {
+		'Texture': function(instance, properties, values ) {
+			INIT.Default(instance, properties, values);
 			instance.needsUpdate = true;
+		},
+
+		/**
+		 * Call animation clip constructor
+		 */
+		'AnimationClip': function(instance, properties, values ) {
+			INIT.Default(instance, properties, values);
+			instance.constructor.call(
+					instance, instance.name,
+						 	  instance.duration,
+						 	  instance.tracks
+				);
+		},
+
+		/**
+		 * Call keyframe constructor
+		 */
+		'KeyframeTrack': function(instance, properties, values ) {
+			INIT.Default(instance, properties, values);
+			instance.constructor.call(
+					instance, instance.name,
+							  instance.keys
+				);
 		},
 
 		/**
 		 * Convert image payload to base-64 encoded data URI
 		 */
-		'Image': function(values, instance) {
+		'ImageElement': function( instance, properties, values) {
 
 			// Expand binary buffer to base-64 data URI
 			var ctype = (String.fromCharCode( values[0][0] ) + 
@@ -60,48 +96,28 @@ define(["three"], function(THREE) {
 				payload = values[0].slice(4);
 
 			// Create data URI
-			values[0] = 'data:image/' + ctype + ';base64,' + btoa(String.fromCharCode.apply(null, payload));
-		},
+			instance.src = 'data:image/' + ctype + ';base64,' + btoa(String.fromCharCode.apply(null, payload));
 
-		/**
-		 * Call animation clip constructor
-		 */
-		'AnimationClip': function(values, instance) {
-			instance.constructor.call(
-					instance, values[0], /* name */
-						 	  values[1], /* duration */
-						 	  values[2]  /* trakcs */
-				);
 		},
-
-		/**
-		 * Call keyframe constructor
-		 */
-		'KeyframeTrack': function(values, instance) {
-			instance.constructor.call(
-					instance, values[0], /* name */
-							  values[1]  /* keys */
-				);
-		}
 
 	};
 
 	// Entity Type
 	var ENTITIES = [
 		
-		[THREE.Vector2, 								FACTORY.Default, 				INIT.Empty ],
-		[THREE.Vector3, 								FACTORY.Default, 				INIT.Empty ],
-		[THREE.Face3, 									FACTORY.Default, 				INIT.Empty ],
-		[THREE.Color, 									FACTORY.Default, 				INIT.Empty ],
-		[THREE.Quaternion,								FACTORY.Default, 				INIT.Empty ],
-		[THREE.Euler,									FACTORY.Default, 				INIT.Empty ],
+		[THREE.Vector2, 								FACTORY.Default, 				INIT.Default ],
+		[THREE.Vector3, 								FACTORY.Default, 				INIT.Default ],
+		[THREE.Face3, 									FACTORY.Default, 				INIT.Default ],
+		[THREE.Color, 									FACTORY.Default, 				INIT.Default ],
+		[THREE.Quaternion,								FACTORY.Default, 				INIT.Default ],
+		[THREE.Euler,									FACTORY.Default, 				INIT.Default ],
 
-		[THREE.Matrix3, 								FACTORY.Default, 				INIT.Empty ],
-		[THREE.Matrix4, 								FACTORY.Default, 				INIT.Empty ],
+		[THREE.Matrix3, 								FACTORY.Default, 				INIT.Default ],
+		[THREE.Matrix4, 								FACTORY.Default, 				INIT.Default ],
 
-		[THREE.Geometry, 								FACTORY.Default, 				INIT.Empty ],
-		[THREE.BufferGeometry, 							FACTORY.Default, 				INIT.Empty ],
-		[THREE.BufferAttribute, 						FACTORY.Default, 				INIT.Empty ],
+		[THREE.Geometry, 								FACTORY.Default, 				INIT.Default ],
+		[THREE.BufferGeometry, 							FACTORY.Default, 				INIT.Default ],
+		[THREE.BufferAttribute, 						FACTORY.Default, 				INIT.Default ],
 
 		[THREE.AnimationClip, 							FACTORY.Unconstructed,			INIT.AnimationClip ],
 		[THREE.VectorKeyframeTrack, 					FACTORY.Unconstructed,			INIT.KeyframeTrack ],
@@ -110,19 +126,19 @@ define(["three"], function(THREE) {
 		[THREE.BooleanKeyframeTrack, 					FACTORY.Unconstructed,			INIT.KeyframeTrack ],
 		[THREE.StringKeyframeTrack, 					FACTORY.Unconstructed,			INIT.KeyframeTrack ],
 
-		[THREE.Sphere, 									FACTORY.Default, 				INIT.Empty ],
+		[THREE.Sphere, 									FACTORY.Default, 				INIT.Default ],
 
-		[THREE.Mesh, 									FACTORY.Default, 				INIT.Object3D ],
+		[THREE.Mesh, 									FACTORY.Default, 				INIT.Mesh ],
 		[THREE.Object3D, 								FACTORY.Default, 				INIT.Object3D ],
 
-		[THREE.MeshBasicMaterial, 						FACTORY.Default, 				INIT.Empty ],
-		[THREE.MeshPhongMaterial, 						FACTORY.Default, 				INIT.Empty ],
-		[THREE.MeshLambertMaterial, 					FACTORY.Default, 				INIT.Empty ],
-		[THREE.Material, 								FACTORY.Default, 				INIT.Empty ],
+		[THREE.MeshBasicMaterial, 						FACTORY.Default, 				INIT.Default ],
+		[THREE.MeshPhongMaterial, 						FACTORY.Default, 				INIT.Default ],
+		[THREE.MeshLambertMaterial, 					FACTORY.Default, 				INIT.Default ],
+		[THREE.Material, 								FACTORY.Default, 				INIT.Default ],
 
 		[THREE.CompressedTexture, 						FACTORY.Default, 				INIT.Texture ],
 		[THREE.Texture, 								FACTORY.Default, 				INIT.Texture ],
-		[(typeof Image == 'undefined' ? null : Image),	FACTORY.Default, 				INIT.Image],
+		[(typeof Image == 'undefined' ? null : Image),	FACTORY.Default,				INIT.ImageElement],
 
 	];
 
@@ -131,7 +147,7 @@ define(["three"], function(THREE) {
 
 		// Object3D is a superclass of Mesh
 		Object3D	: [
-			'children', 'up', 'matrix', 'matrixWorld', 'visible', 'castShadow', 
+			'name', 'children', 'up', 'matrix', 'matrixWorld', 'visible', 'castShadow', 
 			'receiveShadow', 'frustumCulled', 'renderOrder'
 		],
 
@@ -402,21 +418,8 @@ define(["three"], function(THREE) {
 				var values = getPrimitive(),
 					moreValues = [];
 
-				// Run configurator
-				moreValues = ENTITIES[eid][2]( values, instance );
-
-				// Iterate over properties
-				var props = PROPERTIES[eid];
-				for (var i=0; i<props.length; i++) {
-					instance[props[i]] = values[i];
-				}
-
-				// Iterate over additional properties created
-				// by the configurator
-				if (moreValues)
-					for (var i=0; i<moreValues.length; i++) {
-						instance[moreValues[i][0]] = moreValues[i][1];
-					}
+				// Run initializer
+				ENTITIES[eid][2]( instance, PROPERTIES[eid], values );
 
 				// Return entity
 				return instance;

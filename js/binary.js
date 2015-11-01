@@ -837,6 +837,15 @@ define(["three"], function(THREE) {
 
 				}
 
+				// Check for uncompressed file
+				if ((viewUint8[0] == 0x1f) && (viewUint8[0] == 0x8b)) {
+					throw {
+						'name' 		: 'ServerError',
+						'message'	: 'It seems the server did not add Content-Encoding: gzip header and the bundle arrived compressed!',
+						toString 	: function(){return this.name + ": " + this.message;}
+					};
+				}
+
 				// Populate key index
 				var indexSize = dataview.getUint16( viewUint8.length - 2, true );
 				dataEnd = offset = viewUint8.length - indexSize;

@@ -37,8 +37,7 @@ requirejs.config({
 	paths: {
 
 		// Use THREE from CDN
-		// 'three': '//cdn.rawgit.com/mrdoob/three.js/master/build/three.min',
-		'three': '../../build.local/lib/three-0.73.0',
+		'three': '//cdn.rawgit.com/mrdoob/three.js/master/build/three.min',
 
 		// Use Require.js TEXT plugin from CDN
 		'text': '//cdn.rawgit.com/requirejs/text/master/text'

@@ -31,8 +31,8 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "../binary"], funct
 
 	// Override fake DOM
 	var mock = new MockBrowser.mocks.MockBrowser();
-	ENTITIES[26][0] = mock.getDocument().createElement('img').constructor;
-	ENTITIES[26][3] = function( values ) {
+	ENTITIES[32][0] = mock.getDocument().createElement('img').constructor;
+	ENTITIES[32][3] = function( values ) {
 
 		var fname = values[0];
 		console.log("Loading",fname);
@@ -628,6 +628,15 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "../binary"], funct
 			// Write primitive
 			this.writePrimitive(srcDict[k]);
 		}
+
+	}
+
+	/**
+	 * Encode difference-encoded array
+	 */
+	BinaryEncoder.prototype.writeDENCArray = function( srcArray, type ) {
+
+		this.writeUint8( OP.ARRAY_X_8 );
 
 	}
 

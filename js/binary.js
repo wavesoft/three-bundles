@@ -154,6 +154,11 @@ define(["three"], function(THREE) {
 		[THREE.Sphere, 									FACTORY.Default, 				INIT.Default ],
 
 		[THREE.Mesh, 									FACTORY.Default, 				INIT.Mesh ],
+		[THREE.AmbientLight,							FACTORY.Default,				INIT.Default ],
+		[THREE.DirectionalLight,						FACTORY.Default,				INIT.Default ],
+		[THREE.HemisphereLight,							FACTORY.Default,				INIT.Default ],
+		[THREE.PointLight,								FACTORY.Default,				INIT.Default ],
+		[THREE.SpotLight,								FACTORY.Default,				INIT.Default ],
 		[THREE.Object3D, 								FACTORY.Default, 				INIT.Object3D ],
 
 		[THREE.MeshBasicMaterial, 						FACTORY.Default, 				INIT.Default ],
@@ -162,6 +167,7 @@ define(["three"], function(THREE) {
 		[THREE.Material, 								FACTORY.Default, 				INIT.Default ],
 
 		[THREE.CompressedTexture, 						FACTORY.Default, 				INIT.Texture ],
+		[THREE.CubeTexture, 							FACTORY.Default, 				INIT.Texture ],
 		[THREE.Texture, 								FACTORY.Default, 				INIT.Texture ],
 		[(typeof Image == 'undefined' ? null : Image),	FACTORY.Default,				INIT.ImageElement],
 
@@ -196,7 +202,7 @@ define(["three"], function(THREE) {
 
 		// Texture
 		Texture: [ 
-			'image', 'mipmaps', 'flipY', 'mapping', 'wrapS', 'wrapT', 'magFilter', 'minFilter',
+			'mipmaps', 'flipY', 'mapping', 'wrapS', 'wrapT', 'magFilter', 'minFilter',
 			'anisotropy', 'format', 'type', 'offset', 'repeat', 'unpackAlignment'
 		],
 
@@ -250,6 +256,26 @@ define(["three"], function(THREE) {
 		PROPERTYSET.Object3D.concat([
 			'geometry', 'material'
 		]),
+		// THREE.AmbientLight
+		PROPERTYSET.Object3D.concat([
+			'color'
+		]),
+		// THREE.DirectionalLight
+		PROPERTYSET.Object3D.concat([
+			'color', 'intensity'
+		]),
+		// THREE.HemisphereLight
+		PROPERTYSET.Object3D.concat([
+			'color', 'groundColor', 'intensity'
+		]),
+		// THREE.PointLight
+		PROPERTYSET.Object3D.concat([
+			'color', 'intensity', 'distance', 'decay'
+		]),
+		// THREE.SpotLight
+		PROPERTYSET.Object3D.concat([
+			'color', 'intensity', 'distance', 'decay', 'angle', 'exponent'
+		]),
 		// THREE.Object3D
 		PROPERTYSET.Object3D,
 
@@ -283,9 +309,17 @@ define(["three"], function(THREE) {
 		PROPERTYSET.Material,
 
 		// THREE.CompressedTexture
-		PROPERTYSET.Texture,
+		PROPERTYSET.Texture.concat([
+			'image'
+		]),
+		// THREE.CubeTexture,
+		PROPERTYSET.Texture.concat([
+			'images'
+		]),
 		// THREE.Texture
-		PROPERTYSET.Texture,
+		PROPERTYSET.Texture.concat([
+			'image'
+		]),
 
 		// Image
 		[ 'src' ],

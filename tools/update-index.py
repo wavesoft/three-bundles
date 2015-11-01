@@ -136,7 +136,7 @@ def enumResources(baseDir):
 	supported_files = {
 		'material' 	: ["json"],
 		'geometry' 	: ["json"],
-		'mesh'	 	: ["json", "js", "obj"],
+		'mesh'	 	: ["json", "js", "obj", "utf8_js"],
 		'object' 	: ["json"],
 		'scene' 	: ["json"],
 		'shader' 	: ["txt", "shader"],

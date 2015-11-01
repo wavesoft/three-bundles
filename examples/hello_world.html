@@ -7,11 +7,11 @@
 		body {
 			font-family: Monospace;
 			background-color: #000000;
+			color: #fff;
 			margin: 0px;
 			overflow: hidden;
 		}
 		#info {
-		    color: #fff;
 		    position: absolute;
 		    top: 10px;
 		    width: 100%;
@@ -19,6 +19,16 @@
 		    z-index: 100;
 		    display: block;
 		}
+		#label-left {
+			position: absolute;
+			left: 10px; bottom: 10px;
+		}
+		#label-right {
+			position: absolute;
+			right: 10px; bottom: 10px;
+			text-align: right;
+		}
+		.highlight { color: #0099FF; }
 		a { color: #0099FF; }
 		</style>
 
@@ -30,6 +40,14 @@
 		<div id="info">
 			<a href="https://github.com/wavesoft/three-bundles" target="_blank">THREE Bundles</a> Hello World Example -
 			monster by <a href="http://www.3drt.com/downloads.htm" target="_blank">3drt</a>
+		</div>
+		<div id="label-left">
+			<span class="highlight">Regular Bundle</span><br />
+			<span id="label-left-text">Loading...</span>
+		</div>
+		<div id="label-right">
+			<span class="highlight">Binary Bundle</span><br />
+			<span id="label-right-text">Loading...</span>
 		</div>
 	</body>
 </html>

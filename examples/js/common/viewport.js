@@ -18,15 +18,15 @@ define(["three"], function(THREE) {
         scene = new THREE.Scene();
 
         // Create a camera
-        camera = new THREE.PerspectiveCamera( 75, window.innerWidth / window.innerHeight, 1, 10000 );
-        camera.position.z = 1000;
+        camera = new THREE.PerspectiveCamera( 20, window.innerWidth / window.innerHeight, 1, 10000 );
+        camera.position.z = 2000;
 
         // Create a renderer
         renderer = new THREE.WebGLRenderer();
         renderer.setSize( window.innerWidth, window.innerHeight );
 
         // Add some lights for shaders
-        scene.add( new THREE.HemisphereLight( 0xffffbb, 0x080820, 1 ) );
+        scene.add( new THREE.HemisphereLight( 0x080820, 0xffffbb, 1.1 ) );
         scene.add( new THREE.AmbientLight( 0x333333 ) );
 
         // Create a clock

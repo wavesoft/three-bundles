@@ -2,7 +2,14 @@
 /**
  * A mesh! plugin for loading THREE Meshes
  */
-define(["three", "three-bundles/utils", "three-bundles/parsers", "three-bundles/extras/OBJLoader", "three-bundles/extras/ColladaLoader"], function(THREE, Utils, Parsers) {
+define(["three", "three-bundles/utils", "three-bundles/parsers", 
+		"three-bundles/extras/OBJLoader", 
+		"three-bundles/extras/ColladaLoader", 
+		"three-bundles/extras/UTF8Loader",
+		"three-bundles/extras/MTLLoader"
+		], function(THREE, Utils, Parsers) {
+
+	THREE.Loader.Handlers.add( /\.dds$/i, new THREE.DDSLoader() );
 
 	// Return definition
 	return {
@@ -46,6 +53,16 @@ define(["three", "three-bundles/utils", "three-bundles/parsers", "three-bundles/
 
 				});
 
+			} else if (Utils.matchesExt(name, "utf8_js")) {
+
+				// Get defaults for cross-origin
+				var crossOrigin = config.crossOrigin || false;
+
+				var loader = new THREE.UTF8Loader();
+				loader.load( req.toUrl(url), function ( object ) {
+					onload( object );
+				});
+
 			} else if (Utils.matchesExt(name, "obj")) {
 
 				// Get defaults for cross-origin
@@ -56,24 +73,24 @@ define(["three", "three-bundles/utils", "three-bundles/parsers", "three-bundles/
 				loader.setCrossOrigin( crossOrigin );
 				loader.load( req.toUrl(url), function ( mesh ) {
 
-					// Dynamically load materials using material name as the lookup key
-					var matNames = [];
-					for (var i=0; i<mesh.children.length; i++) {
-						matNames.push( Utils.expandModuleURL("material!" + mesh.children[i].material.name, moduleName) );
-					}
+					// // Dynamically load materials using material name as the lookup key
+					// var matNames = [];
+					// for (var i=0; i<mesh.children.length; i++) {
+					// 	matNames.push( Utils.expandModuleURL("material!" + mesh.children[i].material.name, moduleName) );
+					// }
 
-					// Load materials
-					req(matNames, function(/* Materials */) {
+					// // Load materials
+					// req(matNames, function(/* Materials */) {
 
-						// Assign materials
-						for (var i=0; i<matNames.length; i++) {
-							mesh.children[i].material = arguments[i];
-						}
+					// 	// Assign materials
+					// 	for (var i=0; i<matNames.length; i++) {
+					// 		mesh.children[i].material = arguments[i];
+					// 	}
 
 						// We are now loaded
 						onload( mesh );
 
-					});
+					// });
 
 				}, function() { /* Progress */ }, function(error) {
 

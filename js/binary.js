@@ -383,7 +383,13 @@ define(["three"], function(THREE) {
 	 * THREE Bundles Binary decoder
 	 */
 	var BinaryDecoder = function() {
+
 		this.offset = 0;
+		this.database = { };
+
+		// Bundles pending to be loaded
+		this.pendingBundleParsers = [ ];
+
 	};
 
 	/**
@@ -396,493 +402,505 @@ define(["three"], function(THREE) {
 	BinaryDecoder.NUMTYPE = NUMTYPE;
 
 	/**
+	 * Set an external database to use
+	 */
+	BinaryDecoder.prototype.setDatabase = function( database ) {
+		this.database = database;
+	}
+
+	/**
 	 * Load a binary stream
 	 */
-	BinaryDecoder.prototype.load = function( url, database, callback ) {
+	BinaryDecoder.prototype.load = function( url, callback ) {
 
+		// Request binary bundle
 		var req = new XMLHttpRequest(),
 			scope = this;
 
-		// Perform the request
+		// Place request
 		req.open('GET', url);
 		req.responseType = "arraybuffer";
 		req.send();
 
-		// Wait until we get a response
+		// Load bundle header and keep a callback
+		// for the remainging loading operations
+		var pendingBundle = {
+			'callback': function() { },
+			'status': 'loading',
+			'meta': {},
+		};
+
+		// Keep this pending action
+		this.pendingBundleParsers.push( pendingBundle );
+
+		// Wait until the bundle is loaded
 		req.onreadystatechange = function () {
 			if (req.readyState !== 4) return;
 
-			// Keep buffer on scope for further loading
-			scope.buffer = req.response;
-			scope.dataview = new DataView(scope.buffer);
-			scope.offset = 0;
-			scope.prevOp = 0;
-			scope.currOp = 0;
-			scope.dataEnd = 0;
-			scope.compactBuf = [];
-			scope.crossRef = [];
-			scope.viewUint8 = new Uint8Array(scope.buffer);
-			scope.viewInt8 = new Int8Array(scope.buffer);
-			scope.keyIndex = [ ];
-			scope.meta = { };
+			// The callback to trigger when we are ready to load
+			pendingBundle['callback'] = (function(buffer, database) {
 
-		}
-	}
+				var dataview = new DataView(buffer),
+					offset = 0,	prevOp = 0, currOp = 0, dataEnd = 0,
+					compactBuf = [], crossRef = [],
+					viewUint8 = new Uint8Array(buffer),
+					viewInt8 = new Int8Array(buffer),
+					keyIndex = [ ], meta = { };
 
-	/**
-	 * Parse the header from the buffer
-	 */
-	BinaryDecoder.prototype.parseHeader = function( database, callback ) {
-
-		// Populate key index
-		var indexSize = this.dataview.getUint16( this.viewUint8.length - 2, true );
-		this.dataEnd = this.offset = this.viewUint8.length - indexSize;
-		while (true) {
-			this.keyIndex.push( this.getPrimitive() );
-			// Check if we reached the end
-			if ((this.offset + 2 >= this.viewUint8.length) || ((this.viewUint8[this.offset] & 0xF8) == 0xF0))
-				break;
-		} 
-		this.offset = 0;
-
-		// Get Primitive-0 that contains the bundle metadata
-		this.meta = this.getPrimitive();
-		if (this.meta['name'] == undefined) {
-			console.error("This doesn't look like a valid 3BD archive");
-			return;
-		}
-
-	}
-
-	/**
-	 * Get a number from the stream
-	 */
-	BinaryDecoder.prototype.getNum = function(type) {
-		if (type == NUMTYPE.INT8) {
-			return this.viewInt8[this.offset++];
-		} else if (type == NUMTYPE.UINT8) {
-			return this.viewUint8[this.offset++];
-		} else if (type == NUMTYPE.INT16) {
-			return this.dataview.getInt16( (this.offset+=2)-2, true );
-		} else if (type == NUMTYPE.UINT16) {
-			return this.dataview.getUint16( (this.offset+=2)-2, true );
-		} else if (type == NUMTYPE.INT32) {
-			return this.dataview.getInt32( (this.offset+=4)-4, true );
-		} else if (type == NUMTYPE.UINT32) {
-			return this.dataview.getUint32( (this.offset+=4)-4, true );
-		} else if (type == NUMTYPE.FLOAT32) {
-			return this.dataview.getFloat32( (this.offset+=4)-4, true );
-		} else if (type == NUMTYPE.FLOAT64) {
-			return this.dataview.getFloat64( (this.offset+=8)-8, true );
-		}
-	}
-
-	/**
-	 * Get a string from the stream
-	 */
-	BinaryDecoder.prototype.getString = function( length ) {
-		var str = "";
-		for (var i=0; i<length; i++)
-			str += String.fromCharCode( this.viewUint8[this.offset++] );
-		return str;
-	}
-
-	/**
-	 * Get a string from the stream
-	 */
-	BinaryDecoder.prototype.getArray = function( length ) {
-		var array = new Array( length );
-		// this.crossRef.push( array );
-		for (var i=0; i<length; i++)
-			array[i] = this.getPrimitive();
-		return array;
-
-	}
-
-	/**
-	 * Get a differential-encoded array from the stream
-	 */
-	BinaryDecoder.prototype.getDiffEncodedArray = function( length, type, array_type ) {
-		// Allocate a data array and get first value according to type
-		var data, is_float = false;
-		switch (type) {
-			case NUMTYPE.INT8:
-				data = new Int8Array(length);
-				data[0] = this.viewInt8[this.offset++];
-				break;
-			case NUMTYPE.UINT8:
-				data = new Uint8Array(length);
-				data[0] = this.viewUint8[this.offset++];
-				break;
-			case NUMTYPE.INT16:
-				data = new Int16Array(length);
-				data[0] = this.dataview.getInt16( (this.offset+=2)-2, true );
-				break;
-			case NUMTYPE.UINT16:
-				data = new Uint16Array(length);
-				data[0] = this.dataview.getUint16( (this.offset+=2)-2, true );
-				break;
-			case NUMTYPE.INT32:
-				data = new Int32Array(length);
-				data[0] = this.dataview.getInt32( (this.offset+=4)-4, true );
-				break;
-			case NUMTYPE.UINT32:
-				data = new Uint32Array(length);
-				data[0] = this.dataview.getUint32( (this.offset+=4)-4, true );
-				break;
-			case NUMTYPE.FLOAT32:
-				data = new Float32Array(length);
-				data[0] = this.dataview.getFloat32( (this.offset+=4)-4, true );
-				is_float = true;
-				break;
-			case NUMTYPE.FLOAT64:
-				data = new Float64Array(length);
-				data[0] = this.dataview.getFloat64( (this.offset+=8)-8, true );
-				is_float = true;
-				break;
-			default:
-				throw {
-					'name' 		: 'TypeError',
-					'message'	: 'The specified numeric type (#' + type + ') at this.offset '+this.offset+' is not known',
-					toString 	: function(){return this.name + ": " + this.message;}
-				};
-		}
-
-		// Select input array
-		var input;
-		switch (array_type) {
-			case NUMTYPE.DIFF8:
-				input = this.viewInt8.slice(this.offset);
-				this.offset += (length - 1);
-				break;
-			case NUMTYPE.DIFF16:
-				input = new Int16Array( this.buffer, this.offset )
-				this.offset += (length - 1) * 2;
-				break;
-
-			default:
-				throw {
-					'name' 		: 'TypeError',
-					'message'	: 'The specified differential array type (#' + array_type + ') at this.offset '+this.offset+' is not known',
-					toString 	: function(){return this.name + ": " + this.message;}
-				};
-		}
-
-		// Build array
-		var lastValue = data[0], value = lastValue;
-		for (var i=1; i<length; i++) {
-			lastValue = data[i] = lastValue + (input[i-1] / (is_float ? this.meta['precision'] : 1.0));
-		}
-
-		// Return aray
-		return data;
-	}
-
-	/**
-	 * Get a typed array of numbers from stream
-	 */
-	BinaryDecoder.prototype.getNumberArray = function( length, type ) {
-		var ofs = this.offset;
-		if (type == NUMTYPE.INT8) {
-			this.offset += length;
-			return new Int8Array( this.buffer, ofs, length );
-		} else if (type == NUMTYPE.UINT8) {
-			this.offset += length;
-			return new Uint8Array( this.buffer, ofs, length );
-		} else if (type == NUMTYPE.INT16) {
-			this.offset += length * 2;
-			return new Int16Array( this.buffer, ofs, length );
-		} else if (type == NUMTYPE.UINT16) {
-			this.offset += length * 2;
-			return new Uint16Array( this.buffer, ofs, length );
-		} else if (type == NUMTYPE.INT32) {
-			this.offset += length * 4;
-			return new Int32Array( this.buffer, ofs, length );
-		} else if (type == NUMTYPE.UINT32) {
-			this.offset += length * 4;
-			return new Uint32Array( this.buffer, ofs, length );
-		} else if (type == NUMTYPE.FLOAT32) {
-			this.offset += length * 4;
-			return new Float32Array( this.buffer, ofs, length );
-		} else if (type == NUMTYPE.FLOAT64) {
-			this.offset += length * 8;
-			return new Float64Array( this.buffer, ofs, length );
-		}
-	}
-
-	/**
-	 * Get an object entity from stream
-	 */
-	BinaryDecoder.prototype.getEntity = function( eid ) {
-		// Try to instantiate entity
-		if (eid >= ENTITIES.length)
-			throw {
-				'name' 		: 'EntityError',
-				'message'	: 'The specified entity id (#' + eid + ') at this.offset '+this.offset+' is not known',
-				toString 	: function(){return this.name + ": " + this.message;}
-			};
-
-		// Call entity factory
-		var instance = ENTITIES[eid][1]( ENTITIES[eid][0] );
-
-		// Keep in cross-reference
-		this.crossRef.push( instance );
-
-		// Get an array that contains the values
-		// for the properties in the property table
-		var values = this.getPrimitive(),
-			moreValues = [];
-
-		// Run initializer
-		ENTITIES[eid][2]( instance, PROPERTIES[eid], values );
-
-		// Return entity
-		return instance;
-	}
-
-	/**
-	 * Get a dictionary from stream
-	 */
-	BinaryDecoder.prototype.getDict = function( size ) {
-		// Create a dict
-		var dict = { };
-		// this.crossRef.push( dict );
-		for (var i=0; i<size; i++) {
-			var k = this.keyIndex[this.dataview.getUint16( (this.offset+=2)-2, true )];
-			var v = this.getPrimitive();
-			dict[k] = v;
-		}
-		return dict;
-
-	}
-
-	/**
-	 * Get a primitive from stream
-	 */
-	BinaryDecoder.prototype.getPrimitive = function( valid_opcodes ) {
-
-		// If we have a compacted buffer, drain it
-		if (this.compactBuf.length > 0) 
-			return this.compactBuf.shift();
-
-		// Get next opcode
-		var op = this.viewUint8[this.offset++];
-
-		// Get primitive tag, if any
-		var tag = undefined;
-		if (op == OP.EXPORT) {
-			// Update tag name
-			tag = this.meta['name']+'/'+this.keyIndex[ this.dataview.getUint16( (this.offset+=2)-2, true ) ];
-			// Get next opcode
-			op = this.viewUint8[this.offset++];
-		}
-
-		// Skip PAD_ALIGN opcodes
-		if ((op & 0xF8) == 0xF0) {
-			this.offset += (op & 0x07) - 1;
-			op = this.viewUint8[this.offset++];
-		}
-
-		// Keep last opcode for debug messages
-		this.prevOp = this.currOp;
-		this.currOp = op;
-
-		// If we have a requirement of valid opcodes, check now
-		if (valid_opcodes !== undefined) {
-			if (valid_opcodes.indexOf(op) == -1)
-				throw {
-					'name' 		: 'OpcodeError',
-					'message'	: 'Unexpected opcode 0x' + op.toString(16) + ' at this.offset ' + this.offset,
-					toString 	: function(){return this.name + ": " + this.message;}
-				};
-		}
-
-		// Handle simple opcodes
-		var result = undefined;
-		switch (op) {
-
-			// -----------------------
-			//  Native primitives
-			// -----------------------
-
-			case OP.UNDEFINED:
-				result = undefined;
-				break;
-
-			case OP.NULL:
-				result = null;
-				break;
-
-			case OP.FALSE:
-				result = false;
-				break;
-
-			case OP.TRUE:
-				result = true;
-				break;
-
-			// -----------------------
-			//  Strings
-			// -----------------------
-
-			case OP.STRING_8:
-				result = this.getString( this.viewUint8[this.offset++] );
-				break;
-
-			case OP.STRING_16:
-				result = this.getString( this.dataview.getUint16( (this.offset+=2)-2, true ) );
-				break;
-
-			case OP.STRING_32:
-				result = this.getString( this.dataview.getUint32( (this.offset+=4)-4, true ) );
-				break;
-
-			// -----------------------
-			//  Arrays
-			// -----------------------
-
-			case OP.ARRAY_EMPTY:
-				result = [ ];
-				break;
-
-			case OP.ARRAY_X_8:
-				result = this.getArray( this.viewUint8[this.offset++] );
-				break;
-
-			case OP.ARRAY_X_16:
-				result = this.getArray( this.dataview.getUint16( (this.offset+=2)-2, true ) );
-				break;
-
-			case OP.ARRAY_X_32:
-				result = this.getArray( this.dataview.getUint32( (this.offset+=4)-4, true ) );
-				break;
-
-			// -----------------------
-			//  Dictionary
-			// -----------------------
-
-			case OP.DICT:
-				result = this.getDict( this.viewUint8[this.offset++] );
-				break;
-
-			// -----------------------
-			//  Cross-reference
-			// -----------------------
-
-			case OP.REF_16:
-				result = this.crossRef[ this.dataview.getUint16( (this.offset+=2)-2, true ) ];
-				break;
-
-			case OP.IMPORT:
-
-				// Get named tag from database
-				var refTag = this.keyIndex[ this.dataview.getUint16( (this.offset+=2)-2, true ) ];
-				result = database[ refTag ];
-
-				// Log errors
-				if (result === undefined) {
-					console.warn("Could not import external tag '"+refTag+"'");
+				function getNum(type) {
+					if (type == NUMTYPE.INT8) {
+						return viewInt8[offset++];
+					} else if (type == NUMTYPE.UINT8) {
+						return viewUint8[offset++];
+					} else if (type == NUMTYPE.INT16) {
+						return dataview.getInt16( (offset+=2)-2, true );
+					} else if (type == NUMTYPE.UINT16) {
+						return dataview.getUint16( (offset+=2)-2, true );
+					} else if (type == NUMTYPE.INT32) {
+						return dataview.getInt32( (offset+=4)-4, true );
+					} else if (type == NUMTYPE.UINT32) {
+						return dataview.getUint32( (offset+=4)-4, true );
+					} else if (type == NUMTYPE.FLOAT32) {
+						return dataview.getFloat32( (offset+=4)-4, true );
+					} else if (type == NUMTYPE.FLOAT64) {
+						return dataview.getFloat64( (offset+=8)-8, true );
+					}
 				}
 
-				break;
+				function getString( length ) {
+					var str = "";
+					for (var i=0; i<length; i++)
+						str += String.fromCharCode( viewUint8[offset++] );
+					return str;
+				}
 
-			// -----------------------
-			//  Comlpex Opcodes
-			// -----------------------
+				function getArray( length ) {
+					var array = new Array( length );
+					// crossRef.push( array );
+					for (var i=0; i<length; i++)
+						array[i] = getPrimitive();
+					return array;
+				}
 
-			default:
+				function getDiffEncodedArray( length, type, array_type ) {
 
-				var b20 = (op & 0x7),		// Bits 3:0
-					b40 = (op & 0x1F), 		// Bits 4:0
-					b43 = (op & 0x18) >> 3; // Bits 4:3
+					// Allocate a data array and get first value according to type
+					var data, is_float = false;
+					switch (type) {
+						case NUMTYPE.INT8:
+							data = new Int8Array(length);
+							data[0] = viewInt8[offset++];
+							break;
+						case NUMTYPE.UINT8:
+							data = new Uint8Array(length);
+							data[0] = viewUint8[offset++];
+							break;
+						case NUMTYPE.INT16:
+							data = new Int16Array(length);
+							data[0] = dataview.getInt16( (offset+=2)-2, true );
+							break;
+						case NUMTYPE.UINT16:
+							data = new Uint16Array(length);
+							data[0] = dataview.getUint16( (offset+=2)-2, true );
+							break;
+						case NUMTYPE.INT32:
+							data = new Int32Array(length);
+							data[0] = dataview.getInt32( (offset+=4)-4, true );
+							break;
+						case NUMTYPE.UINT32:
+							data = new Uint32Array(length);
+							data[0] = dataview.getUint32( (offset+=4)-4, true );
+							break;
+						case NUMTYPE.FLOAT32:
+							data = new Float32Array(length);
+							data[0] = dataview.getFloat32( (offset+=4)-4, true );
+							is_float = true;
+							break;
+						case NUMTYPE.FLOAT64:
+							data = new Float64Array(length);
+							data[0] = dataview.getFloat64( (offset+=8)-8, true );
+							is_float = true;
+							break;
+						default:
+							throw {
+								'name' 		: 'TypeError',
+								'message'	: 'The specified numeric type (#' + type + ') at offset '+offset+' is not known',
+								toString 	: function(){return this.name + ": " + this.message;}
+							};
+					}
 
-				if ((op & 0xF8) == 0xE8) { /* STRING_3 */
-					result = this.getString( b20 );
-					break;
+					// Select input array
+					var input;
+					switch (array_type) {
+						case NUMTYPE.DIFF8:
+							input = viewInt8.slice(offset);
+							offset += (length - 1);
+							break;
+						case NUMTYPE.DIFF16:
+							input = new Int16Array( buffer, offset )
+							offset += (length - 1) * 2;
+							break;
 
-				} else if ((op & 0xF8) == 0xC0) { /* NUMBER_1 */
-					result = this.getNum( b20 );
-					break;
+						default:
+							throw {
+								'name' 		: 'TypeError',
+								'message'	: 'The specified differential array type (#' + array_type + ') at offset '+offset+' is not known',
+								toString 	: function(){return this.name + ": " + this.message;}
+							};
+					}
 
-				} else if ((op & 0xF8) == 0xC8) { /* ARRAY_8 */
-					result = this.getNumberArray( this.viewUint8[this.offset++], b20 );
-					break;
+					// Build array
+					var lastValue = data[0], value = lastValue;
+					for (var i=1; i<length; i++) {
+						lastValue = data[i] = lastValue + (input[i-1] / (is_float ? meta['precision'] : 1.0));
+					}
 
-				} else if ((op & 0xF8) == 0xD0) { /* ARRAY_16 */
-					result = this.getNumberArray( this.dataview.getUint16( (this.offset+=2)-2, true ), b20 );
-					break;
-
-				} else if ((op & 0xF8) == 0xD8) { /* ARRAY_32 */
-					result = this.getNumberArray( this.dataview.getUint32( (this.offset+=4)-4, true ), b20 );
-					break;
-
-				} else if ((op & 0xE0) == 0x20) { /* DIFF_ARRAY_8 */
-					result = this.getDiffEncodedArray( this.viewUint8[this.offset++], b20, b43 );
-					break;
-
-				} else if ((op & 0xE0) == 0x40) { /* DIFF_ARRAY_16 */
-					result = this.getDiffEncodedArray( this.dataview.getUint16( (this.offset+=2)-2, true ), b20, b43 );
-					break;
-
-				} else if ((op & 0xE0) == 0x60) { /* DIFF_ARRAY_32 */
-					result = this.getDiffEncodedArray( this.dataview.getUint32( (this.offset+=4)-4, true ), b20, b43 );
-					break;
-
-				} else if ((op & 0xE0) == 0x80) { /* ENTITY_5 */
-					result = this.getEntity( b40 );
-					break;
-
-				} else if ((op & 0xE0) == 0xA0) { /* ENTITY_13 */
-					result = this.getEntity( (b40 << 8) + this.viewUint8[this.offset++] );
-					break;
-
-				} else if ((op & 0xF8) == 0x00) { /* NUMBER_N */
-
-					// Get length
-					var len = this.viewUint8[this.offset++];
-
-					// Populate compact num buffer
-					this.compactBuf = [];
-					for (var i=0; i<len; i++)
-						this.compactBuf.push( this.getNum( b20 ) );
-
-					// Pop firt
-					result = this.compactBuf.shift();
-					break;
-
-				} else {
-
-					throw {
-						'name' 		: 'OpcodeError',
-						'message'	: 'Unknown opcode 0x' + op.toString(16) + ' at this.offset ' + this.offset + '. Last opcode was 0x' + this.prevOp.toString(16),
-						toString 	: function(){return this.name + ": " + this.message;}
-					};
+					// Return aray
+					return data;
 
 				}
 
+				function getNumberArray( length, type ) {
+					var ofs = offset;
+					if (type == NUMTYPE.INT8) {
+						offset += length;
+						return new Int8Array( buffer, ofs, length );
+					} else if (type == NUMTYPE.UINT8) {
+						offset += length;
+						return new Uint8Array( buffer, ofs, length );
+					} else if (type == NUMTYPE.INT16) {
+						offset += length * 2;
+						return new Int16Array( buffer, ofs, length );
+					} else if (type == NUMTYPE.UINT16) {
+						offset += length * 2;
+						return new Uint16Array( buffer, ofs, length );
+					} else if (type == NUMTYPE.INT32) {
+						offset += length * 4;
+						return new Int32Array( buffer, ofs, length );
+					} else if (type == NUMTYPE.UINT32) {
+						offset += length * 4;
+						return new Uint32Array( buffer, ofs, length );
+					} else if (type == NUMTYPE.FLOAT32) {
+						offset += length * 4;
+						return new Float32Array( buffer, ofs, length );
+					} else if (type == NUMTYPE.FLOAT64) {
+						offset += length * 8;
+						return new Float64Array( buffer, ofs, length );
+					}
+				}
+
+				function getEntity( eid ) {
+					// Try to instantiate entity
+					if (eid >= ENTITIES.length)
+						throw {
+							'name' 		: 'EntityError',
+							'message'	: 'The specified entity id (#' + eid + ') at offset '+offset+' is not known',
+							toString 	: function(){return this.name + ": " + this.message;}
+						};
+
+					// Call entity factory
+					var instance = ENTITIES[eid][1]( ENTITIES[eid][0] );
+
+					// Keep in cross-reference
+					crossRef.push( instance );
+
+					// Get an array that contains the values
+					// for the properties in the property table
+					var values = getPrimitive(),
+						moreValues = [];
+
+					// Run initializer
+					ENTITIES[eid][2]( instance, PROPERTIES[eid], values );
+
+					// Return entity
+					return instance;
+				}
+
+				function getDict( size ) {
+					// Create a dict
+					var dict = { };
+					// crossRef.push( dict );
+					for (var i=0; i<size; i++) {
+						var k = keyIndex[dataview.getUint16( (offset+=2)-2, true )];
+						var v = getPrimitive();
+						dict[k] = v;
+					}
+					return dict;
+				}
+
+				function getPrimitive( valid_opcodes ) {
+
+					// If we have a compacted buffer, drain it
+					if (compactBuf.length > 0) 
+						return compactBuf.shift();
+
+					// Get next opcode
+					var op = viewUint8[offset++];
+
+					// Get primitive tag, if any
+					var tag = undefined;
+					if (op == OP.EXPORT) {
+						// Update tag name
+						tag = meta['name']+'/'+keyIndex[ dataview.getUint16( (offset+=2)-2, true ) ];
+						// Get next opcode
+						op = viewUint8[offset++];
+					}
+
+					// Skip PAD_ALIGN opcodes
+					if ((op & 0xF8) == 0xF0) {
+						offset += (op & 0x07) - 1;
+						op = viewUint8[offset++];
+					}
+
+					// Keep last opcode for debug messages
+					prevOp = currOp;
+					currOp = op;
+
+					// If we have a requirement of valid opcodes, check now
+					if (valid_opcodes !== undefined) {
+						if (valid_opcodes.indexOf(op) == -1)
+							throw {
+								'name' 		: 'OpcodeError',
+								'message'	: 'Unexpected opcode 0x' + op.toString(16) + ' at offset ' + offset,
+								toString 	: function(){return this.name + ": " + this.message;}
+							};
+					}
+
+					// Handle simple opcodes
+					var result = undefined;
+					switch (op) {
+
+						// -----------------------
+						//  Native primitives
+						// -----------------------
+
+						case OP.UNDEFINED:
+							result = undefined;
+							break;
+
+						case OP.NULL:
+							result = null;
+							break;
+
+						case OP.FALSE:
+							result = false;
+							break;
+
+						case OP.TRUE:
+							result = true;
+							break;
+
+						// -----------------------
+						//  Strings
+						// -----------------------
+
+						case OP.STRING_8:
+							result = getString( viewUint8[offset++] );
+							break;
+
+						case OP.STRING_16:
+							result = getString( dataview.getUint16( (offset+=2)-2, true ) );
+							break;
+
+						case OP.STRING_32:
+							result = getString( dataview.getUint32( (offset+=4)-4, true ) );
+							break;
+
+						// -----------------------
+						//  Arrays
+						// -----------------------
+
+						case OP.ARRAY_EMPTY:
+							result = [ ];
+							break;
+
+						case OP.ARRAY_X_8:
+							result = getArray( viewUint8[offset++] );
+							break;
+
+						case OP.ARRAY_X_16:
+							result = getArray( dataview.getUint16( (offset+=2)-2, true ) );
+							break;
+
+						case OP.ARRAY_X_32:
+							result = getArray( dataview.getUint32( (offset+=4)-4, true ) );
+							break;
+
+						// -----------------------
+						//  Dictionary
+						// -----------------------
+
+						case OP.DICT:
+							result = getDict( viewUint8[offset++] );
+							break;
+
+						// -----------------------
+						//  Cross-reference
+						// -----------------------
+
+						case OP.REF_16:
+							result = crossRef[ dataview.getUint16( (offset+=2)-2, true ) ];
+							break;
+
+						case OP.IMPORT:
+
+							// Get named tag from database
+							var refTag = keyIndex[ dataview.getUint16( (offset+=2)-2, true ) ];
+							result = database[ refTag ];
+
+							// Log errors
+							if (result === undefined) {
+								console.warn("Could not import external tag '"+refTag+"'");
+							}
+
+							break;
+
+						// -----------------------
+						//  Comlpex Opcodes
+						// -----------------------
+
+						default:
+
+							var b20 = (op & 0x7),		// Bits 3:0
+								b40 = (op & 0x1F), 		// Bits 4:0
+								b43 = (op & 0x18) >> 3; // Bits 4:3
+
+							if ((op & 0xF8) == 0xE8) { /* STRING_3 */
+								result = getString( b20 );
+								break;
+
+							} else if ((op & 0xF8) == 0xC0) { /* NUMBER_1 */
+								result = getNum( b20 );
+								break;
+
+							} else if ((op & 0xF8) == 0xC8) { /* ARRAY_8 */
+								result = getNumberArray( viewUint8[offset++], b20 );
+								break;
+
+							} else if ((op & 0xF8) == 0xD0) { /* ARRAY_16 */
+								result = getNumberArray( dataview.getUint16( (offset+=2)-2, true ), b20 );
+								break;
+
+							} else if ((op & 0xF8) == 0xD8) { /* ARRAY_32 */
+								result = getNumberArray( dataview.getUint32( (offset+=4)-4, true ), b20 );
+								break;
+
+							} else if ((op & 0xE0) == 0x20) { /* DIFF_ARRAY_8 */
+								result = getDiffEncodedArray( viewUint8[offset++], b20, b43 );
+								break;
+
+							} else if ((op & 0xE0) == 0x40) { /* DIFF_ARRAY_16 */
+								result = getDiffEncodedArray( dataview.getUint16( (offset+=2)-2, true ), b20, b43 );
+								break;
+
+							} else if ((op & 0xE0) == 0x60) { /* DIFF_ARRAY_32 */
+								result = getDiffEncodedArray( dataview.getUint32( (offset+=4)-4, true ), b20, b43 );
+								break;
+
+							} else if ((op & 0xE0) == 0x80) { /* ENTITY_5 */
+								result = getEntity( b40 );
+								break;
+
+							} else if ((op & 0xE0) == 0xA0) { /* ENTITY_13 */
+								result = getEntity( (b40 << 8) + viewUint8[offset++] );
+								break;
+
+							} else if ((op & 0xF8) == 0x00) { /* NUMBER_N */
+
+								// Get length
+								var len = viewUint8[offset++];
+
+								// Populate compact num buffer
+								compactBuf = [];
+								for (var i=0; i<len; i++)
+									compactBuf.push( getNum( b20 ) );
+
+								// Pop firt
+								result = compactBuf.shift();
+								break;
+
+							} else {
+
+								throw {
+									'name' 		: 'OpcodeError',
+									'message'	: 'Unknown opcode 0x' + op.toString(16) + ' at offset ' + offset + '. Last opcode was 0x' + prevOp.toString(16),
+									toString 	: function(){return this.name + ": " + this.message;}
+								};
+
+							}
+
+					}
+
+					// If we have a tag, store it in database
+					if (tag) database[tag] = result;
+					return result;
+
+				}
+
+				// Populate key index
+				var indexSize = dataview.getUint16( viewUint8.length - 2, true );
+				dataEnd = offset = viewUint8.length - indexSize;
+				while (true) {
+					keyIndex.push( getPrimitive() );
+					// Check if we reached the end
+					if ((offset + 2 >= viewUint8.length) || ((viewUint8[offset] & 0xF8) == 0xF0))
+						break;
+				} 
+				offset = 0;
+
+				// Get Primitive-0 that contains the bundle metadata and
+				// also keep them in the pending bundle stack
+				meta = pendingBundle.meta = getPrimitive();
+				if (meta['name'] == undefined) {
+					console.error("This doesn't look like a valid 3BD archive");
+					return;
+				}
+
+				// Return a post-processing function that will load
+				// the remaining entities
+				return function() {
+
+					// Started loading
+					console.time( 'BinaryBundle' );
+
+					// Read all primitives from file
+					while (offset < dataEnd) 
+						getPrimitive();
+
+					// Finished loading
+					console.timeEnd( 'BinaryBundle' );
+
+
+				};
+
+
+			})( req.response, scope.database );
+
+			// Trigger callback
+			if (callback) callback();
+
 		}
-
-		// If we have a tag, store it in database
-		if (tag) database[tag] = result;
-		return result;
-
 	}
 
 	/**
-	 * Parse the loaded stream
+	 * Parse all loaded bundles
 	 */
-	BinaryDecoder.prototype.parse = function( database, callback ) {
+	BinaryDecoder.prototype.parse = function( callback ) {
 
-		console.time( 'BinaryBundle' );
+		// TODO: Solve dependencies first
 
-		// Read all primitives from file
-		var primitive, all = [];
-		while (this.offset < this.dataEnd)
-			all.push( this.getPrimitive() );
+		// Parse modules in loading order
+		for (var i=0; i<this.pendingBundleParsers.length; i++) {
+			this.pendingBundleParsers[i].callback();
+		}
 
-		// Finished loading
-		console.timeEnd( 'BinaryBundle' );
-		callback( all );
+		// Release all pending functions that contain
+		// their own buffer stack.
+		this.pendingBundleParsers = [];
+
+		// Fire callback
+		if (callback) callback();
+
 
 	}
 

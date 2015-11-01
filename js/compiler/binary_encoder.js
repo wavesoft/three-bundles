@@ -85,11 +85,98 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "../binary"], funct
 
 	/**
 	 * THREE Bundles Binary encoder
+	 *
+	 * @param {string} filename - The output filename
+	 * @param {string} bundleName - The name of the bundle (if missing) it will be the filename without the extension
+	 * @param {object} metadata - An object with additional metadata to include in the bundle header
 	 */
-	var BinaryEncoder = function( filename, bundleName ) {
-		this.offset = 0;
+	var BinaryEncoder = function( filename, bundleName, metadata ) {
 
-		// Debug logging
+		/**
+		 * Enable cross-referencing to objects in the same bundle
+		 *
+		 * This effectively de-duplicates simmilar objects and therefore
+		 * it's a good idea to keep it on.
+		 *
+		 * 0 = Disable cross-referencing
+		 * 1 = Enable cross-referecing only ByRef
+		 * 2 = Enable cross-referencing by ByRef and ByVal
+		 *
+		 * @property {int}
+		 */
+		this.useCrossRef = 2;
+
+		/**
+		 * Enable compacting of consecutive numbers
+		 * 
+		 * If FALSE this 
+		 */
+		this.useCompact = true;
+
+		/**
+		 * Be strict when analyzing arrays
+		 *
+		 * If TRUE float and integer values will never mix on the same array
+		 * when trying to optimise it. If false, this might break some javascript 
+		 * code if due to rounding errors an integer gets converted to float.
+		 *
+		 * If unsure, keep it to TRUE. 
+		 *
+		 * @property {boolean}
+		 */
+		this.useStrictFloat = true;
+
+		/**
+		 * Perserve the typed array types
+		 *
+		 * If TRUE and the encoder encounters a TypedArray, it will
+		 * not try to further optimise it, but it will perseve it's type.
+		 *
+		 * This can increase the file size 
+		 *
+		 * @property {boolean}
+		 */
+		this.usePerservingOfTypes = true;
+
+		/**
+		 * Enable differential encoding algorithm.
+		 *
+		 * This algoritm tries to compress higher-grade arrays
+		 * to lower-grade arrays by keeping the difference between
+		 * the values, which is likely to be smaller than the
+		 * value itself.
+		 *
+		 * 0 = Disable differential encoding
+		 * 1 = Enable differentla encoding only for Integers
+		 * 2 = Enable differentla encoding for Integers and Floats
+		 *
+		 * @property {int}
+		 */
+		this.useDiffEnc = 2;
+
+		/**
+		 * Percision (or better multiplication scale) for float-to-int conversion
+		 * when downgrading a Float32/Float32 to Int8 or Int16.
+		 *
+		 * If you are using many normalized floats (0.0 - 1.0), a value
+		 * of 10,000 is usually good.
+		 *
+		 * @param {int}
+		 */
+		this.diffEncPrecision = 10000;
+
+		/**
+		 * Thresshold in number of elements after which differential encoding is applied.
+		 *
+		 * This is useful since differential encoding isn't going to compress much if
+		 * the array is already too small. Therefore for performance reasons the default
+		 * value is 16.
+		 *
+		 * @param {int}
+		 */
+		this.diffEncElmThreshold = 16;
+
+		// Debug logging flags
 		this.logWrite = false;
 		this.logPrimitive = false;
 		this.logArray = false;
@@ -108,29 +195,16 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "../binary"], funct
 		}
 		this.bundleName = bundleName;
 
-		// Internal cross-referencing
-		// 0=Disable, 1=Only ByRef, 2=ByRef + ByVal
-		this.useCrossRef = 2;
+		// Writing file offset
+		this.offset = 0;
+
+		// REF object references
 		this.encodedReferences = [ ];
-
-		// Enable compacting of consecutive numbers
-		this.useCompact = true;
-
-		// Be strict when analyzing arrays
-		// If FALSE an array that contains both floats and ints might
-		// be condensed.
-		this.useStrictFloat = true;
 
 		// Cross-reference across bundles throguh database of tags
 		this.database = { };
 		this.dbObjects = [ ];
 		this.dbTags = [ ];
-
-		// Differential encoding
-		// 0=Disable, 1=Only INT, 2=INT and FLOAT
-		this.useDiffEnc = 0;
-		this.diffEncPrecision = 10000;
-		this.diffEncElmThreshold = 16;
 
 		// Dictionary key lokup
 		this.keyDictIndex = [ ];
@@ -138,12 +212,14 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "../binary"], funct
 		// Open write stream
 		this.stream = fs.createWriteStream( filename );
 
-		// Write metadata
-		this.writePrimitive({
-			'name': bundleName,
-			'revision': REV,
-			'precision': this.diffEncPrecision,
-		});
+		// Prepare metadata
+		var meta = metadata || { };
+		meta['name'] = bundleName;
+		meta['rev'] = REV;
+		meta['precision'] = this.diffEncPrecision;
+
+		// Write bundle header
+		this.writePrimitive( meta );
 
 	};
 
@@ -390,11 +466,11 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "../binary"], funct
 	/**
 	 * Get minimum type to fit this numeric array
 	 */
-	BinaryEncoder.prototype.getNumArrayType = function( v, skipDiffenc ) {
+	BinaryEncoder.prototype.getNumArrayType = function( v ) {
 
-		// Typed arrays are simple, unless we are 
-		// analysing for difference encoding
-		if ((this.useDiffEnc == 0) || skipDiffenc) {
+		// If we are not using differential encoding or if we
+		// need to perserve the type of arrays, return the type itself
+		if ((this.useDiffEnc == 0) || this.usePerservingOfTypes) {
 			if (v instanceof Uint8Array) {
 				return NUMTYPE.UINT8;
 			} else if (v instanceof Int8Array) {
@@ -410,8 +486,9 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "../binary"], funct
 			}
 		}
 
-		// When using strict floats and we have a float array, return it as-is
-		if ((this.useDiffEnc == 0) || skipDiffenc || this.useStrictFloat) {
+		// When we are using no or integer differential encoding, or
+		// if we are perserving the type of typed arrays, return the type ifself
+		if ((this.useDiffEnc < 1) || this.usePerservingOfTypes) {
 			if (v instanceof Float32Array) {
 				return NUMTYPE.FLOAT32;
 			} else if (v instanceof Float64Array) {
@@ -457,7 +534,7 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "../binary"], funct
 			// If we have a 16-bit or 32-bit integer,
 			// check if we can further optimise it
 			// using differential encoding with fixed precision
-			if ((this.useDiffEnc > 1) && !skipDiffenc && (v.length > this.diffEncElmThreshold)) {
+			if ((this.useDiffEnc > 1) && (v.length > this.diffEncElmThreshold)) {
 				if ((maxDiff * this.diffEncPrecision) < 128) {
 					// We can encode using 8-bit differential
 					type |= (NUMTYPE.DIFF8 << 3);
@@ -497,7 +574,7 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "../binary"], funct
 			// If we have a 16-bit or 32-bit integer,
 			// check if we can further optimise it
 			// using differential encoding
-			if ((this.useDiffEnc > 0) && !skipDiffenc) {
+			if (this.useDiffEnc > 0) {
 				if ((type >= NUMTYPE.INT16) && (maxDiff < 128)) {
 					// We can encode using 8-bit differential
 					type |= (NUMTYPE.DIFF8 << 3);
@@ -730,7 +807,7 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "../binary"], funct
 
 						// Check if the current slice is numeric
 						var slice = srcArray.slice(i,i+j),
-							sliceType = this.getNumArrayType( slice, true );
+							sliceType = this.getNumArrayType( slice );
 						if (sliceType !== undefined) {
 
 							// Write opcode
@@ -941,13 +1018,9 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "../binary"], funct
 		// Prepare property table
 		var propertyTable = new Array( PROPERTIES[eid].length );
 
-		// Iterate over object's properties
-		for (var k in object) {
-			// Skip unknown properties
-			var pid = PROPERTIES[eid].indexOf(k);
-			if (pid == -1) continue;
-			// Encode properties
-			propertyTable[pid] = object[k];
+		// Collect object properties
+		for (var i=0; i<PROPERTIES[eid].length; i++) {
+			propertyTable[i] = object[ PROPERTIES[eid][i] ];
 		}
 
 		// Post-process entities

@@ -17,9 +17,30 @@ The data int he file are organised in primitives, each one being one of the foll
 
 In oder to optimise for performance, we are using length-prefixed notation when needed, and to optimise for size, the compiler de-duplicates similar entities.
 
-## Entities
+## Opcodes
 
-The following entities are currently supported by the file format:
+The following table contains all the opcodes used in the file format.
+
+<img src="https://raw.githubusercontent.com/wavesoft/three-bundles/master/doc/opcodes.jpg" />
+
+### Numerical Types
+
+The following numerical types are supported:
+
+| NUMTYPE | Type      |
+|---------|-----------|
+| 0       | INT8      |
+| 1       | UINT8     |
+| 2       | INT16     |
+| 3       | UINT16    |
+| 4       | INT32     |
+| 5       | UINT32    |
+| 6       | FLOAT32   |
+| 7       | FLOAT64   |
+
+### Entities
+
+The following entities are currently supported:
 
 | EID | Object Type                   |
 |-----|-------------------------------|
@@ -51,8 +72,3 @@ The following entities are currently supported by the file format:
 | 25  | THREE.Texture                 |
 | 26  | ImageElement (DOM Element)    |
 
-## Opcodes
-
-The following table contains all the opcodes used in the file format.
-
-<img src="https://raw.githubusercontent.com/wavesoft/three-bundles/master/doc/opcodes.jpg" />

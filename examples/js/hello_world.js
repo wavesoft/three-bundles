@@ -126,10 +126,10 @@ define(["three", "three-bundles", "common/viewport"], function(THREE, THREEBundl
 			};
 
 		// Load demo bundle
-		decoder.load("bundles/materials.3bd", function(bundle) {
+		decoder.load("bundles/materials.3bd.gz", function(bundle) {
 			if (--pendingBundles == 0) loadCallback();
 		});
-		decoder.load("bundles/meshes.3bd", function(bundle) {
+		decoder.load("bundles/meshes.3bd.gz", function(bundle) {
 			if (--pendingBundles == 0) loadCallback();
 		});
 

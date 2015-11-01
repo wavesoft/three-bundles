@@ -1,6 +1,23 @@
 "use strict";
 /**
- * Package Binary Loader
+ * THREE Bundles - Binary Decoder
+ * Copyright (C) 2015 Ioannis Charalampidis <ioannis.charalampidis@cern.ch>
+ * 
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ * 
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ * 
+ * You should have received a copy of the GNU General Public License along
+ * with this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ *
+ * @author Ioannis Charalampidis / https://github.com/wavesoft
  */
 define(["three"], function(THREE) {
 
@@ -311,7 +328,8 @@ define(["three"], function(THREE) {
 		INT16 	: 0x02,		UINT16 	: 0x03, // Integers 16-bit
 		INT32   : 0x04,		UINT32  : 0x05, // Integers 32-bit
 		FLOAT32 : 0x06,		FLOAT64 : 0x07, // Float of 32 and 64 bit
-		INT24   : 0x08,		UINT24  : 0x09, // Integers 24-bit
+		INT24   : 0x08,		UINT24  : 0x09, // Integers 24-bit (internal use)
+		DIFFENC : 0x10,						// Difference encoding
 	};
 
 	/**

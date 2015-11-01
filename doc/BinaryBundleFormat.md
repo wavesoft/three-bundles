@@ -1,9 +1,9 @@
 
 # Binary Bundle Format
 
-The binary bundle is a compacted representation of javascript objects, specially optimised for minimising the space THREE.js objects occupy. In addition, it offers a symbol import/export functionality for sharing resources among different bundles.
+The binary bundle is a compacted representation of javascript objects, further optimised for minimising the space THREE.js objects occupy. In addition, it offers a symbol import/export functionality for sharing resources among different bundles.
 
-The data int he file are organised in primitives, each one being one of the following:
+The data in a `.3BD` file are organised in _Primitives_, each one being one of the following:
 
 * `undefined`
 * `null`
@@ -15,7 +15,34 @@ The data int he file are organised in primitives, each one being one of the foll
 * Plain Object
 * THREE.js Object (called _Entity_)
 
-In oder to optimise for performance, we are using length-prefixed notation when needed, and to optimise for size, the compiler de-duplicates similar entities.
+The object primitives are composites. Internally the use array primitives to represent the series of property names and the property values. 
+
+## Optimisations
+
+There are a series of optimisations used in this file format. The goal is to have the smallest file size possible that will not impact the parsing speed. This means avoiding `for` loops, using TypedArrays when possible and de-duplicating entries in the file. In addition, to further reduce the file size, the type of the TypedArray is chosen dynamically by analysing the values of the array.
+
+### De-duplication
+
+De-duplication works in multiple levels:
+
+* __Similar Entities__ are de-duplicated by adding a reference opcode to the previous entity.
+* __Object Keys__ are de-duplicated using a lookup table.
+
+### Compression
+
+Currently there is only some minimal op-code compression:
+
+* __Up to 16 consecutive numbers__ of similar type are compacted to a single opcode, reducing the overhead of the extra opcode before every number. This can reduce up to 7% the file size.
+
+However the file format is quite sparse and easily compressible. Therefore, when the compilation process is finished, the file is further compressed with `gzip` encoding, since all modern browsers can decompress such format in the transport level.
+
+### Image Embedding
+
+In order to further optimise the user experience, we wanted a predictable loading time for the images. While it's true that we can benefit from parallel browser request to different images, it's not always easy to know when they are ready or when an error occurred.
+
+Therefore we decided to include the image payloads in the bundle. __Be aware__ that every image included in the bundle increases the loading time since they need to be base64-encoded to a data URI at loading time.
+
+However the above case can be easily solved using compressed textures. Such textures are encoded natively to the file format and benefit from the optimisations and compression. For instance, in one of our tests, 12 DDS textures totalling 2.7 Mb were compressed into a bundle of 1.7Mb.
 
 ## Opcodes
 

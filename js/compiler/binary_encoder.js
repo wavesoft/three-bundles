@@ -1,5 +1,22 @@
 /**
- * Package Binary Loader
+ * THREE Bundles - Binary Encoder
+ * Copyright (C) 2015 Ioannis Charalampidis <ioannis.charalampidis@cern.ch>
+ * 
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ * 
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ * 
+ * You should have received a copy of the GNU General Public License along
+ * with this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ *
+ * @author Ioannis Charalampidis / https://github.com/wavesoft
  */
 define(["three", "fs", "bufferpack", "util", "mock-browser", "../binary"], function(THREE, fs, pack, util, MockBrowser, Binary) {
 
@@ -351,7 +368,7 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "../binary"], funct
 	/**
 	 * Get minimum type to fit this numeric array
 	 */
-	BinaryEncoder.prototype.getNumArrayType = function( v ) {
+	BinaryEncoder.prototype.getNumArrayType = function( v, strictFloat ) {
 
 		// Typed arrays are simple
 		if (v instanceof Uint8Array) {
@@ -373,7 +390,7 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "../binary"], funct
 		}
 
 		// Get bounds
-		var min = v[0], max = v[0], is_float = false;
+		var min = v[0], max = v[0], is_float = false, all_float = true;
 		for (var i=0; i<v.length; i++) {
 			var n = v[i];
 			// Make sure we have only numbers
@@ -382,8 +399,17 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "../binary"], funct
 			if (n > max) max = n;
 			if (n < min) min = n;
 			// Check for float
-			if (!is_float && (n % 1 != 0)) is_float=true;
+			if (n % 1 != 0) {
+				if (!is_float) is_float=true;
+			} else {
+				if ((n != 0.0) && all_float) all_float=false;
+			}
 		}
+
+		// If we are strict on the float types,
+		// return undefined if a mismatch is found
+		if (strictFloat && is_float && !all_float)
+			return undefined;
 
 		// Check if we have to use floats
 		if (is_float) {
@@ -601,7 +627,7 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "../binary"], funct
 
 						// Check if the current slice is numeric
 						var slice = srcArray.slice(i,i+j),
-							sliceType = this.getNumArrayType( slice );
+							sliceType = this.getNumArrayType( slice, false );
 						if (sliceType !== undefined) {
 
 							// Write opcode

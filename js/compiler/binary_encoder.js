@@ -26,6 +26,7 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "../binary"], funct
 	var ENTITIES = Binary.ENTITIES,
 		PROPERTIES = Binary.PROPERTIES,
 		NUMTYPE = Binary.NUMTYPE,
+		REV = Binary.REV
 		OP = Binary.OP;
 
 	// Override fake DOM
@@ -113,7 +114,7 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "../binary"], funct
 		this.dbTags = [ ];
 
 		// Differential encoding
-		this.useDiffEnc = true;
+		this.useDiffEnc = false;
 		this.diffEncPrecision = 10000;
 
 		// Dictionary key lokup
@@ -124,7 +125,9 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "../binary"], funct
 
 		// Write metadata
 		this.writePrimitive({
-			'name': bundleName
+			'name': bundleName,
+			'revision': REV,
+			'precision': this.diffEncPrecision,
 		});
 
 	};
@@ -899,6 +902,7 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "../binary"], funct
 		this.writePrimitive( object, name );
 
 	}
+
 
 	/**
 	 * Return binary encoder

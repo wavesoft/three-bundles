@@ -21,6 +21,9 @@
  */
 define(["three"], function(THREE) {
 
+	// Protocol revision
+	var REV = 1;
+
 	// Factories
 	var FACTORY = {
 
@@ -343,6 +346,7 @@ define(["three"], function(THREE) {
 	 * Expose tables and opcodes
 	 */
 	BinaryDecoder.OP = OP;
+	BinaryDecoder.REV = REV;
 	BinaryDecoder.ENTITIES = ENTITIES;
 	BinaryDecoder.PROPERTIES = PROPERTIES;
 	BinaryDecoder.NUMTYPE = NUMTYPE;

@@ -68,7 +68,9 @@ The following numerical types are supported:
 
 ### Entities
 
-The following entities are currently supported:
+The entities are pre-defined THREE.js objects, represented with an entity ID (EID), and with known properties. Therefore they are encoded with their EID + A primitive array with the values of each property.
+
+The following table contains all the encoded properties up to this version:
 
 | EID | Object Type                   |
 |-----|-------------------------------|

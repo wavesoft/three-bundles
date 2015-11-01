@@ -447,6 +447,15 @@ define(["three"], function(THREE) {
 					viewInt8 = new Int8Array(buffer),
 					keyIndex = [ ], meta = { };
 
+				// Check for compressed file
+				if ((viewUint8[0] == 0x1f) && (viewUint8[1] == 0x8b)) {
+					throw {
+						'name' 		: 'ServerError',
+						'message'	: 'It seems the server did not add Content-Encoding: gzip header and the bundle arrived compressed!',
+						toString 	: function(){return this.name + ": " + this.message;}
+					};
+				}
+
 				function getNum(type) {
 					if (type == NUMTYPE.INT8) {
 						return viewInt8[offset++];
@@ -835,15 +844,6 @@ define(["three"], function(THREE) {
 					if (tag) database[tag] = result;
 					return result;
 
-				}
-
-				// Check for uncompressed file
-				if ((viewUint8[0] == 0x1f) && (viewUint8[0] == 0x8b)) {
-					throw {
-						'name' 		: 'ServerError',
-						'message'	: 'It seems the server did not add Content-Encoding: gzip header and the bundle arrived compressed!',
-						toString 	: function(){return this.name + ": " + this.message;}
-					};
 				}
 
 				// Populate key index

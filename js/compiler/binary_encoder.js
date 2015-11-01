@@ -514,7 +514,7 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "../binary"], funct
 
 		// If we have a tag, tag this primitive first
 		if (tag) {
-			if (this.logTag) console.log("TAG @"+this.offset+": export="+tag);
+			if (this.logTag) console.log("TAG @"+this.offset+": export="+this.bundleName+'/'+tag);
 			this.writeUint8( OP.EXPORT );
 			this.writeUint16( this.getKeyIndex(tag) );
 

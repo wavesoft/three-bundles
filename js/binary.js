@@ -486,7 +486,7 @@ define(["three"], function(THREE) {
 				var tag = undefined;
 				if (op == OP.EXPORT) {
 					// Update tag name
-					tag = keyIndex[ dataview.getUint16( (offset+=2)-2, true ) ];
+					tag = meta['name']+'/'+keyIndex[ dataview.getUint16( (offset+=2)-2, true ) ];
 					// Get next opcode
 					op = viewUint8[offset++];
 				}

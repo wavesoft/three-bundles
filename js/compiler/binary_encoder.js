@@ -375,11 +375,11 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "../binary"], funct
 	/**
 	 * Get minimum type to fit this numeric array
 	 */
-	BinaryEncoder.prototype.getNumArrayType = function( v, strictFloat ) {
+	BinaryEncoder.prototype.getNumArrayType = function( v, skipDiffenc ) {
 
 		// Typed arrays are simple, unless we are 
 		// analysing for difference encoding
-		if (!this.useDiffEnc) {
+		if (!this.useDiffEnc || skipDiffenc) {
 			if (v instanceof Uint8Array) {
 				return NUMTYPE.UINT8;
 			} else if (v instanceof Int8Array) {
@@ -442,7 +442,7 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "../binary"], funct
 			// If we have a 16-bit or 32-bit integer,
 			// check if we can further optimise it
 			// using differential encoding with fixed precision
-			if (this.useDiffEnc) {
+			if (this.useDiffEnc && !skipDiffenc) {
 				if ((maxDiff * this.diffEncPrecision) < 128) {
 					// We can encode using 8-bit differential
 					console.log("!!! Can Diff-Encode type="+_TYPENAME[type]+", to=INT8, len="+v.length);
@@ -484,7 +484,7 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "../binary"], funct
 			// If we have a 16-bit or 32-bit integer,
 			// check if we can further optimise it
 			// using differential encoding
-			if (this.useDiffEnc) {
+			if (this.useDiffEnc && !skipDiffenc) {
 				if ((type >= NUMTYPE.INT16) && (maxDiff < 128)) {
 					// We can encode using 8-bit differential
 					console.log("!!! Can Diff-Encode type="+_TYPENAME[type]+", to=INT8, len="+v.length);
@@ -634,9 +634,13 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "../binary"], funct
 	/**
 	 * Encode difference-encoded array
 	 */
-	BinaryEncoder.prototype.writeDENCArray = function( srcArray, type ) {
+	BinaryEncoder.prototype.writeDiffEncNum = function( srcArray, type ) {
 
-		this.writeUint8( OP.ARRAY_X_8 );
+		// Write initial value
+		this.writeNum( srcArray[0], type & 0x07 );
+
+		// Write differential values
+		
 
 	}
 
@@ -680,21 +684,21 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "../binary"], funct
 				// Check if we can compact the following  up to 16 numerical values
 				var canCompact = false;
 				if (this.useCompact) {
-					for (var j=15; j>1; j--) {
+					for (var j=Math.min(srcArray.length, 255); j>1; j--) {
 						if (i+j >= srcArray.length) continue;
 
 						// Check if the current slice is numeric
 						var slice = srcArray.slice(i,i+j),
-							sliceType = this.getNumArrayType( slice, false );
+							sliceType = this.getNumArrayType( slice, true );
 						if (sliceType !== undefined) {
 
 							// Write opcode
 							if (this.logCompact) console.log(" >< @"+this.offset+": compact, len=", j,", type=", _TYPENAME[sliceType], ", values=",slice);
 							this.writeUint8(
 									OP.NUMBER_N |	// We have N consecutive numbers
-									(j << 3)    |	// N=j
 									sliceType		// Consecutive numbers type
 								);
+							this.writeUint8( j ); 	// How many consecutive values we have
 
 							// Write values
 							this.writeNum( slice, sliceType );
@@ -732,9 +736,18 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "../binary"], funct
 				}
 
 				// Write header
-				if (this.logArray) console.log(" [] @"+this.offset+": n8, type=", _TYPENAME[arrayType],", len=", srcArray.length);
-				this.writeUint8( OP.ARRAY_8 | arrayType );
-				this.writeUint8( srcArray.length );
+				if ((arrayType & 0x18) != 0) {
+					// We are using differential encoding
+					this.writeUint8( OP.DIFF_ARRAY_8 | arrayType );
+					this.writeUint8( srcArray.length );
+					this.writeDiffEncNum( srcArray, arrayType );
+				} else {
+					// We are using straight array
+					if (this.logArray) console.log(" [] @"+this.offset+": n8, type=", _TYPENAME[arrayType],", len=", srcArray.length);
+					this.writeUint8( OP.ARRAY_8 | arrayType );
+					this.writeUint8( srcArray.length );
+					this.writeNum( srcArray, arrayType );
+				}
 
 			} else if (srcArray.length < 65536) {
 
@@ -752,9 +765,18 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "../binary"], funct
 				}
 
 				// Write header
-				if (this.logArray) console.log(" [] @"+this.offset+": n16, type=", _TYPENAME[arrayType],", len=", srcArray.length);
-				this.writeUint8( OP.ARRAY_16 | arrayType );
-				this.writeUint16( srcArray.length );
+				if ((arrayType & 0x18) != 0) {
+					// We are using differential encoding
+					this.writeUint8( OP.DIFF_ARRAY_16 | arrayType );
+					this.writeUint16( srcArray.length );
+					this.writeDiffEncNum( srcArray, arrayType );
+				} else {
+					// We are using straight array
+					if (this.logArray) console.log(" [] @"+this.offset+": n16, type=", _TYPENAME[arrayType],", len=", srcArray.length);
+					this.writeUint8( OP.ARRAY_16 | arrayType );
+					this.writeUint16( srcArray.length );
+					this.writeNum( srcArray, arrayType );
+				}
 
 			} else {
 
@@ -772,14 +794,20 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "../binary"], funct
 				}
 
 				// Write header
-				if (this.logArray) console.log(" [] @"+this.offset+": n32, type=", _TYPENAME[arrayType],", len=", srcArray.length);
-				this.writeUint8( OP.ARRAY_32 | arrayType );
-				this.writeUint32( srcArray.length );
+				if ((arrayType & 0x18) != 0) {
+					// We are using differential encoding
+					this.writeUint8( OP.DIFF_ARRAY_32 | arrayType );
+					this.writeUint32( srcArray.length );
+					this.writeDiffEncNum( srcArray, arrayType );
+				} else {
+					// We are using straight array
+					if (this.logArray) console.log(" [] @"+this.offset+": n32, type=", _TYPENAME[arrayType],", len=", srcArray.length);
+					this.writeUint8( OP.ARRAY_32 | arrayType );
+					this.writeUint32( srcArray.length );
+					this.writeNum( srcArray, arrayType );
+				}
 
 			}
-
-			// Write array
-			this.writeNum( srcArray, arrayType );
 
 		}
 

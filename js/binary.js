@@ -129,7 +129,9 @@ define(["three"], function(THREE) {
 	 * purposes try to move the most frequently used entities to the top.
 	 */
 	var ENTITIES = [
-		
+
+		// --- 1-Opcode Entities [0-31] ---
+
 		[THREE.Vector2, 								FACTORY.Default, 				INIT.Default ],
 		[THREE.Vector3, 								FACTORY.Default, 				INIT.Default ],
 		[THREE.Face3, 									FACTORY.Default, 				INIT.Default ],
@@ -169,6 +171,9 @@ define(["three"], function(THREE) {
 		[THREE.CompressedTexture, 						FACTORY.Default, 				INIT.Texture ],
 		[THREE.CubeTexture, 							FACTORY.Default, 				INIT.Texture ],
 		[THREE.Texture, 								FACTORY.Default, 				INIT.Texture ],
+
+		// --- 2-Opcode Entities [32+] ---
+
 		[(typeof Image == 'undefined' ? null : Image),	FACTORY.Default,				INIT.ImageElement],
 
 	];
@@ -355,6 +360,9 @@ define(["three"], function(THREE) {
 		ENTITY_5: 	 	0x80,	// An entity with 5-bit embedded eid
 		ENTITY_13: 	 	0xA0,	// An entity with 13-bit eid
 		NUMBER_N: 	 	0x00, 	// Consecutive, up to 16 numbers of same type
+		DIFF_ARRAY_8: 	0x20,	// Difference-Encoded TypedArray (8-bit length)
+		DIFF_ARRAY_16: 	0x40,	// Difference-Encoded TypedArray (16-bit length)
+		DIFF_ARRAY_32: 	0x60,	// Difference-Encoded TypedArray (32-bit length)
 	}
 
 	/**
@@ -365,7 +373,7 @@ define(["three"], function(THREE) {
 		INT16 	: 0x02,		UINT16 	: 0x03, // Integers 16-bit
 		INT32   : 0x04,		UINT32  : 0x05, // Integers 32-bit
 		FLOAT32 : 0x06,		FLOAT64 : 0x07, // Float of 32 and 64 bit
-		DIFF8 	: 0x18,		DIFF16	: 0x28, // Difference encoding
+		DIFF8 	: 0x08,		DIFF16	: 0x10, // Difference encoding
 		INT24   : 0xF0,		UINT24  : 0xF1, // Integers 24-bit (internal use)
 	};
 
@@ -441,6 +449,10 @@ define(["three"], function(THREE) {
 				for (var i=0; i<length; i++)
 					array[i] = getPrimitive();
 				return array;
+			}
+
+			function getDiffEncodedArray( length, type, array_type ) {
+
 			}
 
 			function getNumberArray( length, type ) {
@@ -646,7 +658,7 @@ define(["three"], function(THREE) {
 
 						var b20 = (op & 0x7),		// Bits 3:0
 							b40 = (op & 0x1F), 		// Bits 4:0
-							b64 = (op & 0x78) >> 3; // Bits 6:3
+							b43 = (op & 0x18) >> 3; // Bits 4:3
 
 						if ((op & 0xF8) == 0xE8) { /* STRING_3 */
 							result = getString( b20 );
@@ -668,6 +680,18 @@ define(["three"], function(THREE) {
 							result = getNumberArray( dataview.getUint32( (offset+=4)-4, true ), b20 );
 							break;
 
+						} else if ((op & 0xE0) == 0x20) { /* DIFF_ARRAY_8 */
+							result = getDiffEncodedArray( viewUint8[offset++], b20, b43 );
+							break;
+
+						} else if ((op & 0xE0) == 0x40) { /* DIFF_ARRAY_16 */
+							result = getDiffEncodedArray( dataview.getUint16( (offset+=2)-2, true ), b20, b43 );
+							break;
+
+						} else if ((op & 0xE0) == 0x60) { /* DIFF_ARRAY_32 */
+							result = getDiffEncodedArray( dataview.getUint32( (offset+=4)-4, true ), b20, b43 );
+							break;
+
 						} else if ((op & 0xE0) == 0x80) { /* ENTITY_5 */
 							result = getEntity( b40 );
 							break;
@@ -676,11 +700,14 @@ define(["three"], function(THREE) {
 							result = getEntity( (b40 << 8) + viewUint8[offset++] );
 							break;
 
-						} else if ((op & 0x80) == 0x00) { /* NUMBER_N */
+						} else if ((op & 0xF8) == 0x00) { /* NUMBER_N */
+
+							// Get length
+							var len = viewUint8[offset++];
 
 							// Populate compact num buffer
 							compactBuf = [];
-							for (var i=0; i<b64; i++)
+							for (var i=0; i<len; i++)
 								compactBuf.push( getNum( b20 ) );
 
 							// Pop firt

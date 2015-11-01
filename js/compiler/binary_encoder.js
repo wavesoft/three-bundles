@@ -112,6 +112,10 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "../binary"], funct
 		this.dbObjects = [ ];
 		this.dbTags = [ ];
 
+		// Differential encoding
+		this.useDiffEnc = true;
+		this.diffEncPrecision = 10000;
+
 		// Dictionary key lokup
 		this.keyDictIndex = [ ];
 
@@ -370,29 +374,32 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "../binary"], funct
 	 */
 	BinaryEncoder.prototype.getNumArrayType = function( v, strictFloat ) {
 
-		// Typed arrays are simple
-		if (v instanceof Uint8Array) {
-			return NUMTYPE.UINT8;
-		} else if (v instanceof Int8Array) {
-			return NUMTYPE.INT8;
-		} else if (v instanceof Uint16Array) {
-			return NUMTYPE.UINT16;
-		} else if (v instanceof Int16Array) {
-			return NUMTYPE.INT16;
-		} else if (v instanceof Uint32Array) {
-			return NUMTYPE.UINT32;
-		} else if (v instanceof Int32Array) {
-			return NUMTYPE.INT32;
-		} else if (v instanceof Float32Array) {
-			return NUMTYPE.FLOAT32;
-		} else if (v instanceof Float64Array) {
-			return NUMTYPE.FLOAT64;
+		// Typed arrays are simple, unless we are 
+		// analysing for difference encoding
+		if (!this.useDiffEnc) {
+			if (v instanceof Uint8Array) {
+				return NUMTYPE.UINT8;
+			} else if (v instanceof Int8Array) {
+				return NUMTYPE.INT8;
+			} else if (v instanceof Uint16Array) {
+				return NUMTYPE.UINT16;
+			} else if (v instanceof Int16Array) {
+				return NUMTYPE.INT16;
+			} else if (v instanceof Uint32Array) {
+				return NUMTYPE.UINT32;
+			} else if (v instanceof Int32Array) {
+				return NUMTYPE.INT32;
+			} else if (v instanceof Float32Array) {
+				return NUMTYPE.FLOAT32;
+			} else if (v instanceof Float64Array) {
+				return NUMTYPE.FLOAT64;
+			}
 		}
 
 		// Get bounds
-		var min = v[0], max = v[0], is_float = false, all_float = true;
+		var min = v[0], max = v[0], is_float = false, all_float = true, maxDiff = 0, prev = undefined;
 		for (var i=0; i<v.length; i++) {
-			var n = v[i];
+			var n = v[i], d=0;
 			// Make sure we have only numbers
 			if (typeof(n) !== "number") return undefined;
 			// Update bounds
@@ -404,6 +411,13 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "../binary"], funct
 			} else {
 				if ((n != 0.0) && all_float) all_float=false;
 			}
+			// Calculate maximum difference
+			if (prev == undefined) {
+				prev = n;
+			} else {
+				d = Math.abs(n - prev);
+				if (d > maxDiff) maxDiff = d;
+			}
 		}
 
 		// If we are strict on the float types,
@@ -412,13 +426,29 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "../binary"], funct
 			return undefined;
 
 		// Check if we have to use floats
+		var type = 0;
 		if (is_float) {
 
 			// Check bounds if it doesn't fit in FLOAT32
 			if (Math.abs(n) >= 3.40282e+38) {
-				return NUMTYPE.FLOAT64;
+				type = NUMTYPE.FLOAT64;
 			} else {
-				return NUMTYPE.FLOAT32;
+				type = NUMTYPE.FLOAT32;
+			}
+
+			// If we have a 16-bit or 32-bit integer,
+			// check if we can further optimise it
+			// using differential encoding with fixed precision
+			if (this.useDiffEnc) {
+				if ((maxDiff * this.diffEncPrecision) < 128) {
+					// We can encode using 8-bit differential
+					console.log("!!! Can Diff-Encode type="+_TYPENAME[type]+", to=INT8, len="+v.length);
+					type |= NUMTYPE.DIFF8;
+				} else if ((maxDiff * this.diffEncPrecision) < 32768) {
+					// We can encode using 16-bit differential
+					console.log("!!! Can Diff-Encode type="+_TYPENAME[type]+", to=INT16, len="+v.length);
+					type |= NUMTYPE.DIFF16;
+				}
 			}
 
 		} else {
@@ -428,28 +458,44 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "../binary"], funct
 
 				// Check signed bounds
 				if ((min >= -128) && (max <= 127)) {
-					return NUMTYPE.INT8;
+					type = NUMTYPE.INT8;
 				} else if ((min >= -32768) && (max <= 32767)) {
-					return NUMTYPE.INT16;
+					type = NUMTYPE.INT16;
 				} else {
-					return NUMTYPE.INT32;
+					type = NUMTYPE.INT32;
 				}
 
 			} else {
 
 				// Check unsigned bounds
 				if (max < 256) {
-					return NUMTYPE.UINT8;
+					type = NUMTYPE.UINT8;
 				} else if (max < 65536) {
-					return NUMTYPE.UINT16;
+					type = NUMTYPE.UINT16;
 				} else {
-					return NUMTYPE.UINT32;
+					type = NUMTYPE.UINT32;
 				}
 
 			}
 
+			// If we have a 16-bit or 32-bit integer,
+			// check if we can further optimise it
+			// using differential encoding
+			if (this.useDiffEnc) {
+				if ((type >= NUMTYPE.INT16) && (maxDiff < 128)) {
+					// We can encode using 8-bit differential
+					console.log("!!! Can Diff-Encode type="+_TYPENAME[type]+", to=INT8, len="+v.length);
+					type |= NUMTYPE.DIFF8;
+				} else if ((type >= NUMTYPE.INT32) && (maxDiff < 32768)) {
+					// We can encode using 16-bit differential
+					console.log("!!! Can Diff-Encode type="+_TYPENAME[type]+", to=INT16, len="+v.length);
+					type |= NUMTYPE.DIFF16;
+				}
+			}
+
 		}
 
+		return type;
 	}
 
 	/**

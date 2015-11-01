@@ -30,11 +30,12 @@ De-duplication works in multiple levels:
 
 ### Compression
 
-Currently there is only some minimal op-code compression:
+Currently there are two compression algorithms (in addition to the de-duplication mentioned before):
 
 * __Up to 16 consecutive numbers__ of similar type are compacted to a single opcode, reducing the overhead of the extra opcode before every number. This can reduce up to 7% the file size.
+* __Difference encoding__ in series of numbers can also be activated if you are more interested in the file size than the loading performance. This algorithm will try to downgrade 16-bit and 32-bit arrays to 8-bit and 16-bit arrays that hold the difference between sequential numbers. This can also work on Float32 and Float64 arrays, by discarding some precision and converting them to quantised 16-bit or even 8-bit arrays. The precision number is configurable.
 
-However the file format is quite sparse and easily compressible. Therefore, when the compilation process is finished, the file is further compressed with `gzip` encoding, since all modern browsers can decompress such format in the transport level.
+However the file format itself is quite sparse and easily compressible. Therefore, when the compilation process is finished, the file is further compressed with `gzip` encoding, since all modern browsers can decompress such format in the transport level.
 
 ### Image Embedding
 

@@ -328,8 +328,8 @@ define(["three"], function(THREE) {
 		INT16 	: 0x02,		UINT16 	: 0x03, // Integers 16-bit
 		INT32   : 0x04,		UINT32  : 0x05, // Integers 32-bit
 		FLOAT32 : 0x06,		FLOAT64 : 0x07, // Float of 32 and 64 bit
-		INT24   : 0x08,		UINT24  : 0x09, // Integers 24-bit (internal use)
-		DIFFENC : 0x10,						// Difference encoding
+		DIFF8 	: 0x18,		DIFF16	: 0x28, // Difference encoding
+		INT24   : 0xF0,		UINT24  : 0xF1, // Integers 24-bit (internal use)
 	};
 
 	/**

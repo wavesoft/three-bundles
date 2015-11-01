@@ -78,6 +78,10 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "../binary"], funct
 		'INT24',
 		'UINT24'
 	];
+	var _ENCTYPENAME = [
+		'DIFF8',
+		'DIFF16'
+	];
 
 	/**
 	 * THREE Bundles Binary encoder
@@ -93,7 +97,8 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "../binary"], funct
 		this.logAlign = false;
 		this.logEntity = false;
 		this.logCompact = false;
-		this.logTag = true;
+		this.logDiffEnc = true;
+		this.logTag = false;
 
 		// Get bundle name from filename if not provided
 		if (bundleName == undefined) {
@@ -103,10 +108,18 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "../binary"], funct
 		}
 		this.bundleName = bundleName;
 
-		// Cross-reference lookup table
-		this.encodedReferences = [ ];
+		// Internal cross-referencing
+		// 0=Disable, 1=Only ByRef, 2=ByRef + ByVal
 		this.useCrossRef = 2;
+		this.encodedReferences = [ ];
+
+		// Enable compacting of consecutive numbers
 		this.useCompact = true;
+
+		// Be strict when analyzing arrays
+		// If FALSE an array that contains both floats and ints might
+		// be condensed.
+		this.useStrictFloat = true;
 
 		// Cross-reference across bundles throguh database of tags
 		this.database = { };
@@ -114,8 +127,10 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "../binary"], funct
 		this.dbTags = [ ];
 
 		// Differential encoding
-		this.useDiffEnc = false;
+		// 0=Disable, 1=Only INT, 2=INT and FLOAT
+		this.useDiffEnc = 0;
 		this.diffEncPrecision = 10000;
+		this.diffEncElmThreshold = 16;
 
 		// Dictionary key lokup
 		this.keyDictIndex = [ ];
@@ -295,7 +310,7 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "../binary"], funct
 		if (!pad) pad = 0;
 
 		// Calculate pad size
-		var padSize = length - ((this.offset + pad) % length);
+		var padSize = (length - ((this.offset + pad) % length)) % 8;
 		if (padSize == 0) return;
 		if (this.logAlign) console.log("ALN @"+this.offset+": length=",length,", pad=", pad, ", effective=",padSize);
 
@@ -379,7 +394,7 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "../binary"], funct
 
 		// Typed arrays are simple, unless we are 
 		// analysing for difference encoding
-		if (!this.useDiffEnc || skipDiffenc) {
+		if ((this.useDiffEnc == 0) || skipDiffenc) {
 			if (v instanceof Uint8Array) {
 				return NUMTYPE.UINT8;
 			} else if (v instanceof Int8Array) {
@@ -392,7 +407,12 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "../binary"], funct
 				return NUMTYPE.UINT32;
 			} else if (v instanceof Int32Array) {
 				return NUMTYPE.INT32;
-			} else if (v instanceof Float32Array) {
+			}
+		}
+
+		// When using strict floats and we have a float array, return it as-is
+		if ((this.useDiffEnc == 0) || skipDiffenc || this.useStrictFloat) {
+			if (v instanceof Float32Array) {
 				return NUMTYPE.FLOAT32;
 			} else if (v instanceof Float64Array) {
 				return NUMTYPE.FLOAT64;
@@ -423,14 +443,9 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "../binary"], funct
 			}
 		}
 
-		// If we are strict on the float types,
-		// return undefined if a mismatch is found
-		if (strictFloat && is_float && !all_float)
-			return undefined;
-
 		// Check if we have to use floats
 		var type = 0;
-		if (is_float) {
+		if ((this.useStrictFloat && all_float) || (!this.useStrictFloat && is_float)) {
 
 			// Check bounds if it doesn't fit in FLOAT32
 			if (Math.abs(n) >= 3.40282e+38) {
@@ -442,15 +457,13 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "../binary"], funct
 			// If we have a 16-bit or 32-bit integer,
 			// check if we can further optimise it
 			// using differential encoding with fixed precision
-			if (this.useDiffEnc && !skipDiffenc) {
+			if ((this.useDiffEnc > 1) && !skipDiffenc && (v.length > this.diffEncElmThreshold)) {
 				if ((maxDiff * this.diffEncPrecision) < 128) {
 					// We can encode using 8-bit differential
-					console.log("!!! Can Diff-Encode type="+_TYPENAME[type]+", to=INT8, len="+v.length);
-					type |= NUMTYPE.DIFF8;
+					type |= (NUMTYPE.DIFF8 << 3);
 				} else if ((maxDiff * this.diffEncPrecision) < 32768) {
 					// We can encode using 16-bit differential
-					console.log("!!! Can Diff-Encode type="+_TYPENAME[type]+", to=INT16, len="+v.length);
-					type |= NUMTYPE.DIFF16;
+					type |= (NUMTYPE.DIFF16 << 3);
 				}
 			}
 
@@ -484,15 +497,13 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "../binary"], funct
 			// If we have a 16-bit or 32-bit integer,
 			// check if we can further optimise it
 			// using differential encoding
-			if (this.useDiffEnc && !skipDiffenc) {
+			if ((this.useDiffEnc > 0) && !skipDiffenc) {
 				if ((type >= NUMTYPE.INT16) && (maxDiff < 128)) {
 					// We can encode using 8-bit differential
-					console.log("!!! Can Diff-Encode type="+_TYPENAME[type]+", to=INT8, len="+v.length);
-					type |= NUMTYPE.DIFF8;
+					type |= (NUMTYPE.DIFF8 << 3);
 				} else if ((type >= NUMTYPE.INT32) && (maxDiff < 32768)) {
 					// We can encode using 16-bit differential
-					console.log("!!! Can Diff-Encode type="+_TYPENAME[type]+", to=INT16, len="+v.length);
-					type |= NUMTYPE.DIFF16;
+					type |= (NUMTYPE.DIFF16 << 3);
 				}
 			}
 
@@ -632,15 +643,45 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "../binary"], funct
 	}
 
 	/**
-	 * Encode difference-encoded array
+	 * Encode difference-encoded numerical array
 	 */
 	BinaryEncoder.prototype.writeDiffEncNum = function( srcArray, type ) {
 
-		// Write initial value
-		this.writeNum( srcArray[0], type & 0x07 );
+		// Extract type definition
+		var numType = type & 0x07,
+			arrType = (type & 0x18) >> 3,
+			is_float = numType >= NUMTYPE.FLOAT32;
+
+		// Log
+		if (this.logDiffEnc)
+			console.log("DIF @"+this.offset+": len="+srcArray.length+", type="+_TYPENAME[numType]+", enctype="+_ENCTYPENAME[arrType]+", start=",srcArray[0]);
+
+		// Write first value
+		this.writeNum( srcArray[0], numType );
 
 		// Write differential values
-		
+		var lastVal = srcArray[0], delta = 0;
+		for (var i=1; i<srcArray.length; i++) {
+
+			// Calculate delta in integer format
+			delta = srcArray[i] - lastVal;
+			if (is_float) {
+				delta = parseInt( delta * this.diffEncPrecision );
+			}
+
+			// Log delta
+			if (this.logDiffEnc && this.logWrite) console.log("    %"+this.offset+": delta=",delta,", real=",srcArray[i],", last=",lastVal);
+
+			// Write delta according to difference array format
+			if (arrType == NUMTYPE.DIFF8) {
+				this.writeInt8( delta );
+			} else if (arrType == NUMTYPE.DIFF16) {
+				this.writeInt16( delta );
+			}
+
+			// Keep value for next iteration
+			lastVal = srcArray[i];
+		}
 
 	}
 
@@ -719,25 +760,41 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "../binary"], funct
 
 		} else {
 
+			// Calculate additional alignment bytes required when using differential
+			// encoding (this is the first value byte placed by the diffEncode Function)
+			var extraPad = 0 ;
+			if ((arrayType & 0x18) != 0) {
+				if (arrayType <= NUMTYPE.UINT8) {
+					extraPad = 1;
+				} else if (arrayType <= NUMTYPE.UINT16) {
+					extraPad = 2;
+				} else if (arrayType <= NUMTYPE.FLOAT32) {
+					extraPad = 4;
+				} else  {
+					extraPad = 8;
+				}
+			}
+
 			// Write header
 			if (srcArray.length < 256) {
 
 				// Add alignment with 2-byte long header
 				if (arrayType <= NUMTYPE.UINT8) {
 				} else if (arrayType <= NUMTYPE.UINT16) {
-					if (this.logArray) console.log(" <> @"+this.offset+": align=2, pad=2");
-					this.writeAlign(2, 2);
+					if (this.logArray) console.log(" <> @"+this.offset+": align=2, pad="+(2+extraPad));
+					this.writeAlign(2, 2+extraPad);
 				} else if (arrayType <= NUMTYPE.FLOAT32) {
-					if (this.logArray) console.log(" <> @"+this.offset+": align=4, pad=2");
-					this.writeAlign(4, 2);
+					if (this.logArray) console.log(" <> @"+this.offset+": align=4, pad="+(2+extraPad));
+					this.writeAlign(4, 2+extraPad);
 				} else  {
-					if (this.logArray) console.log(" <> @"+this.offset+": align=8, pad=2");
-					this.writeAlign(8, 2);
+					if (this.logArray) console.log(" <> @"+this.offset+": align=8, pad="+(2+extraPad));
+					this.writeAlign(8, 2+extraPad);
 				}
 
 				// Write header
 				if ((arrayType & 0x18) != 0) {
 					// We are using differential encoding
+					if (this.logArray) console.log("[Δ] @"+this.offset+": n8, type=", _TYPENAME[arrayType & 0x07],", len=", srcArray.length);
 					this.writeUint8( OP.DIFF_ARRAY_8 | arrayType );
 					this.writeUint8( srcArray.length );
 					this.writeDiffEncNum( srcArray, arrayType );
@@ -754,19 +811,20 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "../binary"], funct
 				// Add alignment with 3-byte long header
 				if (arrayType <= NUMTYPE.UINT8) {
 				} else if (arrayType <= NUMTYPE.UINT16) {
-					if (this.logArray) console.log(" <> @"+this.offset+": align=2, pad=3");
-					this.writeAlign(2, 3);
+					if (this.logArray) console.log(" <> @"+this.offset+": align=2, pad="+(3+extraPad));
+					this.writeAlign(2, 3+extraPad);
 				} else if (arrayType <= NUMTYPE.FLOAT32) {
-					if (this.logArray) console.log(" <> @"+this.offset+": align=4, pad=3");
-					this.writeAlign(4, 3);
+					if (this.logArray) console.log(" <> @"+this.offset+": align=4, pad="+(3+extraPad));
+					this.writeAlign(4, 3+extraPad);
 				} else  {
-					if (this.logArray) console.log(" <> @"+this.offset+": align=8, pad=3");
-					this.writeAlign(8, 3);
+					if (this.logArray) console.log(" <> @"+this.offset+": align=8, pad="+(3+extraPad));
+					this.writeAlign(8, 3+extraPad);
 				}
 
 				// Write header
 				if ((arrayType & 0x18) != 0) {
 					// We are using differential encoding
+					if (this.logArray) console.log("[Δ] @"+this.offset+": n16, type=", _TYPENAME[arrayType & 0x07],", len=", srcArray.length);
 					this.writeUint8( OP.DIFF_ARRAY_16 | arrayType );
 					this.writeUint16( srcArray.length );
 					this.writeDiffEncNum( srcArray, arrayType );
@@ -783,19 +841,20 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "../binary"], funct
 				// Add alignment with 5-byte long header
 				if (arrayType <= NUMTYPE.UINT8) {
 				} else if (arrayType <= NUMTYPE.UINT16) {
-					if (this.logArray) console.log(" <> @"+this.offset+": align=2, pad=5");
-					this.writeAlign(2, 5);
+					if (this.logArray) console.log(" <> @"+this.offset+": align=2, pad="+(5+extraPad));
+					this.writeAlign(2, 5+extraPad);
 				} else if (arrayType <= NUMTYPE.FLOAT32) {
-					if (this.logArray) console.log(" <> @"+this.offset+": align=4, pad=5");
-					this.writeAlign(4, 5);
+					if (this.logArray) console.log(" <> @"+this.offset+": align=4, pad="+(5+extraPad));
+					this.writeAlign(4, 5+extraPad);
 				} else  {
-					if (this.logArray) console.log(" <> @"+this.offset+": align=8, pad=5");
-					this.writeAlign(8, 5);
+					if (this.logArray) console.log(" <> @"+this.offset+": align=8, pad="+(5+extraPad));
+					this.writeAlign(8, 5+extraPad);
 				}
 
 				// Write header
 				if ((arrayType & 0x18) != 0) {
 					// We are using differential encoding
+					if (this.logArray) console.log("[Δ] @"+this.offset+": n32, type=", _TYPENAME[arrayType & 0x07],", len=", srcArray.length);
 					this.writeUint8( OP.DIFF_ARRAY_32 | arrayType );
 					this.writeUint32( srcArray.length );
 					this.writeDiffEncNum( srcArray, arrayType );

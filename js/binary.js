@@ -373,7 +373,9 @@ define(["three"], function(THREE) {
 		INT16 	: 0x02,		UINT16 	: 0x03, // Integers 16-bit
 		INT32   : 0x04,		UINT32  : 0x05, // Integers 32-bit
 		FLOAT32 : 0x06,		FLOAT64 : 0x07, // Float of 32 and 64 bit
-		DIFF8 	: 0x08,		DIFF16	: 0x10, // Difference encoding
+
+		DIFF8 	: 0x00,		DIFF16	: 0x01, // Difference encoding
+
 		INT24   : 0xF0,		UINT24  : 0xF1, // Integers 24-bit (internal use)
 	};
 
@@ -453,6 +455,80 @@ define(["three"], function(THREE) {
 
 			function getDiffEncodedArray( length, type, array_type ) {
 
+				// Allocate a data array and get first value according to type
+				var data, is_float = false;
+				switch (type) {
+					case NUMTYPE.INT8:
+						data = new Int8Array(length);
+						data[0] = viewInt8[offset++];
+						break;
+					case NUMTYPE.UINT8:
+						data = new Uint8Array(length);
+						data[0] = viewUint8[offset++];
+						break;
+					case NUMTYPE.INT16:
+						data = new Int16Array(length);
+						data[0] = dataview.getInt16( (offset+=2)-2, true );
+						break;
+					case NUMTYPE.UINT16:
+						data = new Uint16Array(length);
+						data[0] = dataview.getUint16( (offset+=2)-2, true );
+						break;
+					case NUMTYPE.INT32:
+						data = new Int32Array(length);
+						data[0] = dataview.getInt32( (offset+=4)-4, true );
+						break;
+					case NUMTYPE.UINT32:
+						data = new Uint32Array(length);
+						data[0] = dataview.getUint32( (offset+=4)-4, true );
+						break;
+					case NUMTYPE.FLOAT32:
+						data = new Float32Array(length);
+						data[0] = dataview.getFloat32( (offset+=4)-4, true );
+						is_float = true;
+						break;
+					case NUMTYPE.FLOAT64:
+						data = new Float64Array(length);
+						data[0] = dataview.getFloat64( (offset+=8)-8, true );
+						is_float = true;
+						break;
+					default:
+						throw {
+							'name' 		: 'TypeError',
+							'message'	: 'The specified numeric type (#' + type + ') at offset '+offset+' is not known',
+							toString 	: function(){return this.name + ": " + this.message;}
+						};
+				}
+
+				// Select input array
+				var input;
+				switch (array_type) {
+					case NUMTYPE.DIFF8:
+						input = viewInt8.slice(offset);
+						offset += (length - 1);
+						break;
+					case NUMTYPE.DIFF16:
+						input = new Int16Array( buffer, offset )
+						offset += (length - 1) * 2;
+						break;
+
+					default:
+						throw {
+							'name' 		: 'TypeError',
+							'message'	: 'The specified differential array type (#' + array_type + ') at offset '+offset+' is not known',
+							toString 	: function(){return this.name + ": " + this.message;}
+						};
+				}
+
+				// Build array
+				var lastValue = data[0], value = lastValue;
+				for (var i=1; i<length; i++) {
+					lastValue = data[i] = lastValue + (input[i-1] / (is_float ? meta['precision'] : 1.0));
+				}
+
+				// Return aray
+				return data;
+
 			}
 
 			function getNumberArray( length, type ) {
@@ -488,7 +564,7 @@ define(["three"], function(THREE) {
 				// Try to instantiate entity
 				if (eid >= ENTITIES.length)
 					throw {
-						'name' 		: 'OpcodeError',
+						'name' 		: 'EntityError',
 						'message'	: 'The specified entity id (#' + eid + ') at offset '+offset+' is not known',
 						toString 	: function(){return this.name + ": " + this.message;}
 					};

@@ -580,15 +580,11 @@ define(['three'], function(THREE) {
 
 		getHttpRequest( path, function( data ) {
 
-			// if ( req.status === 200 || req.status === 0 ) {
-
-				onprogress( data );
-
-			// }
+			onprogress( data );
 
 	        // TODO: handle errors.
 
-		}, onprogress );
+		});
 
 	};
 
@@ -746,16 +742,8 @@ define(['three'], function(THREE) {
 
 	function getHttpRequest( url, onload, opt_onprogress ) {
 
-		var LISTENERS = {
-
-	        load: function( e ) { onload( req, e ); },
-	        progress: function( e ) { opt_onprogress( req, e ); }
-
-	    };
-
 		var req = new THREE.XHRLoader();
-		req.load( url, onload );
-
+		req.load( url, onload, opt_onprogress );
 
 	}
 

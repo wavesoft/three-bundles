@@ -6,7 +6,7 @@ THREE Bundles is a [Require.js](http://requirejs.org/) package that provides dyn
 
 In addition it suggests a way of organizing your resources in reusable `bundles` that can be quickly and optimally loaded in your scene.
 
-[Example](https://rawgit.com/wavesoft/three-bundles/master/examples/hello_world.html)
+[Example](https://cdn.rawgit.com/wavesoft/three-bundles/f3348a0ae6d8c2a6fed3c444cd1ecec1ba49f750/examples/hello_world.html)
 
 __Note: Be aware that this is an in-development, early preview version, with many advanced THREE.js loader features missing.__
 

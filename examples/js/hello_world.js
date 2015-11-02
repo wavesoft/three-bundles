@@ -64,7 +64,7 @@ define(["three", "three-bundles", "common/viewport"], function(THREE, THREEBundl
 
 			// Calculate bundle loading time
 			bundleTime = Date.now() - bundleTime;
-			document.getElementById('label-left-text').innerText = "Loaded in " + bundleTime + " ms";
+			document.getElementById('label-left-text').innerHTML = "Loaded in " + bundleTime + " ms";
 
 			// Get ben from bundle
 			var ben = Bundle.ben;
@@ -103,7 +103,7 @@ define(["three", "three-bundles", "common/viewport"], function(THREE, THREEBundl
 
 				// Calculate binary bundle loading time
 				binaryBundleTime = Date.now() - binaryBundleTime;
-				document.getElementById('label-right-text').innerText = "Loaded in " + binaryBundleTime + " ms";
+				document.getElementById('label-right-text').innerHTML = "Loaded in " + binaryBundleTime + " ms";
 
 				// Get ben from database
 				var ben = decoder.database['meshes/mesh/ben'];
@@ -125,11 +125,11 @@ define(["three", "three-bundles", "common/viewport"], function(THREE, THREEBundl
 
 			};
 
-		// Load demo bundle
-		decoder.load("bundles/materials.3bd.gz", function(bundle) {
+		// Load demo bundles
+		decoder.load("bundles/materials.3bd", function(bundle) {
 			if (--pendingBundles == 0) loadCallback();
 		});
-		decoder.load("bundles/meshes.3bd.gz", function(bundle) {
+		decoder.load("bundles/meshes.3bd", function(bundle) {
 			if (--pendingBundles == 0) loadCallback();
 		});
 

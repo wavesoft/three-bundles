@@ -218,7 +218,7 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "colors", "three-bu
 		this.keyDictIndex = [ ];
 
 		// Open write stream
-		console.log("INFO:".green, "Creating bundle", filename.yellow);
+		console.log("INFO:".green, "Creating bundle", filename.cyan);
 		this.stream = fs.createWriteStream( filename );
 
 		// Prepare metadata

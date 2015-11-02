@@ -1,4 +1,7 @@
-var colors = require("colors");
+var colors = require("colors"),
+	hideWarn = false;
+console.warn = function() { if (hideWarn) return; console.log.apply(console, ["WARN:".yellow].concat(Array.prototype.slice.call(arguments)) ); };
+console.error = function() { console.log.apply(console, ["ERROR:".red].concat(Array.prototype.slice.call(arguments)) ); };
 
 // Validate command-line
 
@@ -51,11 +54,15 @@ requirejs(["require", "three", "binary_encoder"], function(require, THREE, Binar
 
 	// Load bundle
 	console.log("INFO:".green, "Loading bundle");
+	hideWarn = true;
+
 	require(["bundle!hello.bundle"], function(Bundle) {
 
 		console.log("INFO:".green, "Encoding objects");
+		hideWarn = false;
 
 		function encodeMaterials( mesh, encoder, db ) {
+			hideWarn = true;
 
 			var meshes = [], geometries = [], materials = [], textures = [];
 			function encodeObject3D( object ) {
@@ -108,6 +115,7 @@ requirejs(["require", "three", "binary_encoder"], function(require, THREE, Binar
 				encoder.encode( materials[i], 'material/' + (materials[i].name || materials[i].uuid) );
 			}
 
+			hideWarn = false;
 		}
 
 		// Extract all textures

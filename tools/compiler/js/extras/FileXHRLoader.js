@@ -18,9 +18,9 @@
  *
  * @author Ioannis Charalampidis / https://github.com/wavesoft
  */
-define(["three", "fs"], function(THREE, fs) {
+define(["three", "fs", "colors"], function(THREE, fs, colors) {
 
-    console.info("Replacing THREE.XHRLoader with local-file loader");
+    console.info("INFO:".green, "Replacing THREE.XHRLoader with local-file loader");
 
     THREE.XHRLoader = function ( manager ) {
 

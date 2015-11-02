@@ -18,7 +18,7 @@
  *
  * @author Ioannis Charalampidis / https://github.com/wavesoft
  */
-define(["three", "fs", "bufferpack", "util", "mock-browser", "../binary"], function(THREE, fs, pack, util, MockBrowser, Binary) {
+define(["three", "fs", "bufferpack", "util", "mock-browser", "colors", "three-bundles/binary"], function(THREE, fs, pack, util, MockBrowser, colors, Binary) {
 
 	/**
 	 * Import entity and property tables, along with opcodes from binary.js
@@ -29,13 +29,21 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "../binary"], funct
 		REV = Binary.REV
 		OP = Binary.OP;
 
-	// Override fake DOM
+	/**
+	 * THREE.js will create an <img /> element when loading textures, 
+	 * therefore we are replacing the Image element from the binary entity
+	 * description with the one we faked using MockBrowser....
+	 */
 	var mock = new MockBrowser.mocks.MockBrowser();
 	ENTITIES[32][0] = mock.getDocument().createElement('img').constructor;
+
+	/**
+	 * Custom function to embed image payload when compiling the image element
+	 */
 	ENTITIES[32][3] = function( values ) {
 
 		var fname = values[0];
-		console.log("Loading",fname);
+		console.log("INFO:".green, "Embedding",fname.magenta);
 
 		var buf = fs.readFileSync( values[0] ),
 			ext = values[0].split(".").pop().toLowerCase(),
@@ -210,6 +218,7 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "../binary"], funct
 		this.keyDictIndex = [ ];
 
 		// Open write stream
+		console.log("INFO:".green, "Creating bundle", filename.yellow);
 		this.stream = fs.createWriteStream( filename );
 
 		// Prepare metadata
@@ -240,7 +249,7 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "../binary"], funct
 	BinaryEncoder.prototype.setDatabase = function( db, prefix ) {
 		if (!prefix) prefix="";
 
-		// Import into a easy-to-process format
+		// Import into an easy-to-process format
 		for (var k in db) {
 			if (!db.hasOwnProperty(k)) continue;
 			this.dbTags.push( prefix+k );

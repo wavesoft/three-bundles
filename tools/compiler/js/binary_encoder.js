@@ -126,7 +126,13 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "colors", "three-bu
 		/**
 		 * Enable compacting of consecutive numbers
 		 * 
-		 * If FALSE this 
+		 * If TRUE will optimise cases were multiple numbers are encountered
+		 * when encoding an object. In that case instead of having multiple
+		 * number opcodes there is one array instead, thus reducing their size.
+		 *
+		 * If unsure, keep it to TRUE
+		 *
+		 * @property {boolean}
 		 */
 		this.useCompact = true;
 
@@ -135,7 +141,7 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "colors", "three-bu
 		 *
 		 * If TRUE float and integer values will never mix on the same array
 		 * when trying to optimise it. If false, this might break some javascript 
-		 * code if due to rounding errors an integer gets converted to float.
+		 * code if due to rounding errors when an integer gets converted to float.
 		 *
 		 * If unsure, keep it to TRUE. 
 		 *
@@ -194,15 +200,15 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "colors", "three-bu
 		this.diffEncElmThreshold = 16;
 
 		// Debug logging flags
-		this.logWrite = false;
-		this.logPrimitive = false;
-		this.logArray = false;
-		this.logRef = false;
-		this.logAlign = false;
-		this.logEntity = false;
-		this.logCompact = false;
-		this.logDiffEnc = true;
-		this.logTag = false;
+		this.logWrite 		= false;
+		this.logPrimitive 	= false;
+		this.logArray 		= false;
+		this.logRef 		= false;
+		this.logAlign 		= false;
+		this.logEntity		= false;
+		this.logCompact 	= false;
+		this.logDiffEnc 	= true;
+		this.logTag			= true;
 
 		// Get bundle name from filename if not provided
 		if (bundleName == undefined) {
@@ -504,8 +510,8 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "colors", "three-bu
 			}
 		}
 
-		// When we are using no or integer differential encoding, or
-		// if we are perserving the type of typed arrays, return the type ifself
+		// When we are using none or integer differential encoding, or
+		// if we are perserving the type of typed arrays, return the float types ifself
 		if ((this.useDiffEnc < 1) || this.usePerservingOfTypes) {
 			if (v instanceof Float32Array) {
 				return NUMTYPE.FLOAT32;

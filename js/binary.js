@@ -19,7 +19,7 @@
  *
  * @author Ioannis Charalampidis / https://github.com/wavesoft
  */
-define(["three"], function(THREE) {
+define(["three", "./extras/helpers/MD2Character"], function(THREE) {
 
 	// Protocol revision
 	var REV = 1;
@@ -410,6 +410,8 @@ define(["three"], function(THREE) {
 
 		[(typeof Image == 'undefined' ? null : Image),	FACTORY.Default,				INIT.ImageElement],
 
+		[THREE.MD2Character, 							FACTORY.Default, 				INIT.Default ],
+
 	];
 
 	/**
@@ -654,6 +656,11 @@ define(["three"], function(THREE) {
 
 		// Image
 		[ 'src' ],
+
+		// THREE.MD2Character
+		[
+			'scale', 'animationFPS', 'root', 'meshBody', 'meshWeapon', 'weapons', 'activeAnimation'
+		]
 
 	];
 
@@ -1212,7 +1219,7 @@ define(["three"], function(THREE) {
 			})( req.response, scope.database );
 
 			// Trigger callback
-			if (callback) callback();
+			if (callback) callback( this.database );
 
 		}
 	}

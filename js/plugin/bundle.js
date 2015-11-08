@@ -37,7 +37,7 @@ define(["three", "three-bundles/utils",
 
 					// Replace string macros
 					return loaderArgs
-						.replace("$BUNDLE$", baseURL )
+						.replace("${BUNDLE}", baseURL )
 					;
 
 				} else if (loaderArgs instanceof Array) {

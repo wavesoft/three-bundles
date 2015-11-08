@@ -410,6 +410,8 @@ define(["three", "./extras/helpers/MD2Character"], function(THREE) {
 
 		[(typeof Image == 'undefined' ? null : Image),	FACTORY.Default,				INIT.ImageElement],
 
+		// Special types
+
 		[THREE.MD2Character, 							FACTORY.Default, 				INIT.Default ],
 
 	];
@@ -684,7 +686,7 @@ define(["three", "./extras/helpers/MD2Character"], function(THREE) {
 		ARRAY_X_16:	 	0xE4,	// An element array with 16-bit index
 		ARRAY_X_32:	 	0xE5,	// An element array with 32-bit index
 		ARRAY_EMPTY: 	0xE6, 	// An empty array
-		REF_16: 	 	0xE7, 	// A reference to a previous entity
+		REF_24: 	 	0xE7, 	// A reference to a previous entity
 		STRING_3:	 	0xE8,	// A string with 4-bit embedded index
 		NUMBER_1: 	 	0xC0,	// A single number
 		ARRAY_8: 	 	0xC8,	// A numeric array with 8-bit index
@@ -778,7 +780,8 @@ define(["three", "./extras/helpers/MD2Character"], function(THREE) {
 					compactBuf = [], crossRef = [],
 					viewUint8 = new Uint8Array(buffer),
 					viewInt8 = new Int8Array(buffer),
-					keyIndex = [ ], meta = { };
+					keyIndex = [ ], meta = { },
+					tmpHi = 0, tmpLo = 0;
 
 				// Check for compressed file
 				if ((viewUint8[0] == 0x1f) && (viewUint8[1] == 0x8b)) {
@@ -1080,8 +1083,10 @@ define(["three", "./extras/helpers/MD2Character"], function(THREE) {
 						//  Cross-reference
 						// -----------------------
 
-						case OP.REF_16:
-							result = crossRef[ dataview.getUint16( (offset+=2)-2, true ) ];
+						case OP.REF_24:
+							tmpHi = viewUint8[offset++] << 16;
+							tmpLo = dataview.getUint16( (offset+=2)-2, true )
+							result = crossRef[ tmpHi | tmpLo ];
 							break;
 
 						case OP.IMPORT:
@@ -1219,7 +1224,7 @@ define(["three", "./extras/helpers/MD2Character"], function(THREE) {
 			})( req.response, scope.database );
 
 			// Trigger callback
-			if (callback) callback( this.database );
+			if (callback) callback();
 
 		}
 	}
@@ -1241,7 +1246,7 @@ define(["three", "./extras/helpers/MD2Character"], function(THREE) {
 		this.pendingBundleParsers = [];
 
 		// Fire callback
-		if (callback) callback();
+		if (callback) callback( this.database );
 
 
 	}

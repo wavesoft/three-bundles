@@ -39,6 +39,7 @@ if (!opt.options['out']) {
 }
 
 // Configure
+var requirejs = require("requirejs");
 requirejs.config({
 
 	// Bundles package

@@ -18,7 +18,73 @@
  *
  * @author Ioannis Charalampidis / https://github.com/wavesoft
  */
-define(["three", "fs", "bufferpack", "util", "mock-browser", "colors", "three-bundles/binary"], function(THREE, fs, pack, util, MockBrowser, colors, Binary) {
+define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "three-bundles/binary"], function(THREE, bst, fs, util, MockBrowser, colors, Binary) {
+
+	/**
+	 * Import BinarySearchTree
+	 */
+	var BinarySearchTree = bst.BinarySearchTree,
+		objectBstComparison = function(a,b) {
+			for (var i=0; i<a.length; i++) {
+				if (a[i] < b[i]) return -1;
+				if (a[i] > b[i]) return 1;
+				if (a[i] !== b[i]) return 1;
+			  /*if (a[i] == b[i]) continue;*/
+			}
+			return 0;
+		},
+		objectBstEquals = function(a,b) {
+			for (var i=0; i<a.length; i++) {
+				if (a[i] !== b[i]) return false;
+			}
+			return true;
+		};
+
+	/**
+	 * Pack accelerators
+	 */
+	var packBuffer = new ArrayBuffer(8),
+		packViewU8 = new Uint8Array(packBuffer),
+		packViewI8 = new Int8Array(packBuffer),
+		packViewU16 = new Uint16Array(packBuffer),
+		packViewI16 = new Int16Array(packBuffer),
+		packViewU32 = new Uint32Array(packBuffer),
+		packViewI32 = new Int32Array(packBuffer),
+		packViewF32 = new Float32Array(packBuffer),
+		packViewF64 = new Float64Array(packBuffer),
+		pack1b = function( num, signed ) {
+			var n = new Buffer(1);
+			if (signed) packViewI8[0] = num;
+			else packViewU8[0] = num;
+			n[0] = packViewU8[0];
+			return n;
+		},
+		pack2b = function( num, signed ) {
+			var n = new Buffer(2);
+			if (signed) packViewI16[0] = num;
+			else packViewU16[0] = num;
+			for (var i=0; i<2; i++) n[i]=packViewU8[i];
+			return n;
+		},
+		pack4b = function( num, signed ) {
+			var n = new Buffer(4);
+			if (signed) packViewI32[0] = num;
+			else packViewU32[0] = num;
+			for (var i=0; i<4; i++) n[i]=packViewU8[i];
+			return n;
+		},
+		pack4f = function( num ) {
+			var n = new Buffer(4);
+			packViewF32[0] = num;
+			for (var i=0; i<4; i++) n[i]=packViewU8[i];
+			return n;
+		},
+		pack8f = function( num ) {
+			var n = new Buffer(8);
+			packViewF64[0] = num;
+			for (var i=0; i<8; i++) n[i]=packViewU8[i];
+			return n;
+		};
 
 	/**
 	 * Import entity and property tables, along with opcodes from binary.js
@@ -207,8 +273,8 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "colors", "three-bu
 		this.logAlign 		= false;
 		this.logEntity		= false;
 		this.logCompact 	= false;
-		this.logDiffEnc 	= true;
-		this.logTag			= true;
+		this.logDiffEnc 	= false;
+		this.logTag			= false;
 
 		// Get bundle name from filename if not provided
 		if (bundleName == undefined) {
@@ -223,18 +289,23 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "colors", "three-bu
 
 		// REF object references
 		this.encodedReferences = [ ];
+		this.encodedByValBST = new Array( ENTITIES.length );
 
 		// Cross-reference across bundles throguh database of tags
 		this.database = { };
 		this.dbObjects = [ ];
 		this.dbTags = [ ];
 
+		// Write buffer for fixing javascript synchronisation
+		this.writeBuf = [];
+		this.writeActive = false;
+
 		// Dictionary key lokup
 		this.keyDictIndex = [ ];
 
 		// Open write stream
 		console.log("INFO:".green, "Creating bundle", filename.cyan);
-		this.stream = fs.createWriteStream( filename );
+		this.fd = fs.openSync( filename, 'w' ); 
 
 		// Prepare metadata
 		var meta = metadata || { };
@@ -254,7 +325,7 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "colors", "three-bu
 		// Write key index
 		this.writeKeyIndex();
 		// Finalize stream
-		this.stream.end();
+		fs.closeSync( this.fd );
 	}
 
 	/**
@@ -284,43 +355,43 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "colors", "three-bu
 	 * Write an unsigned byte (used for opcodes)
 	 */
 	BinaryEncoder.prototype.writeUint8 = function( d ) {
-		if (this.logWrite) console.log("    #"+this.offset+"=",d);
+		if (this.logWrite) console.log("    #".blue+String(this.offset).blue.bold+":",d);
 		this.offset += 1;
-		this.stream.write( pack.pack('<B', [d]) );
+		fs.writeSync( this.fd, pack1b(d, false), 0, 1 );
 	}
 
 	/**
 	 * Write a signed byte (used for small values)
 	 */
 	BinaryEncoder.prototype.writeInt8 = function( d ) {
-		if (this.logWrite) console.log("    #"+this.offset+"=",d);
+		if (this.logWrite) console.log("    #".blue+String(this.offset).blue.bold+":",d);
 		this.offset += 1;
-		this.stream.write( pack.pack('<b', [d]) );
+		fs.writeSync( this.fd, pack1b(d, true), 0, 1 );
 	}
 
 	/**
 	 * Write a 16-bit unsigned number
 	 */
 	BinaryEncoder.prototype.writeUint16 = function( d ) {
-		if (this.logWrite) console.log("    #"+this.offset+"=",d);
+		if (this.logWrite) console.log("    #".blue+String(this.offset).blue.bold+":",d);
 		this.offset += 2;
-		this.stream.write( pack.pack('<H', [d]) );
+		fs.writeSync( this.fd, pack2b(d, false), 0, 2 );
 	}
 
 	/**
 	 * Write a 16-bit number
 	 */
 	BinaryEncoder.prototype.writeInt16 = function( d ) {
-		if (this.logWrite) console.log("    #"+this.offset+"=",d);
+		if (this.logWrite) console.log("    #".blue+String(this.offset).blue.bold+":",d);
 		this.offset += 2;
-		this.stream.write( pack.pack('<h', [d]) );
+		fs.writeSync( this.fd, pack2b(d, true), 0, 2 );
 	}
 
 	/**
 	 * Write a 24-bit unsigned number
 	 */
 	BinaryEncoder.prototype.writeUint24 = function( d ) {
-		if (this.logWrite) console.log("    #"+this.offset+"=",d);
+		if (this.logWrite) console.log("    #".blue+String(this.offset).blue.bold+":",d);
 		this.writeUint8((d & 0xff0000) >> 16);
 		this.writeUint16(d & 0xffff);
 	}
@@ -329,45 +400,45 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "colors", "three-bu
 	 * Write a 32-bit unsigned number
 	 */
 	BinaryEncoder.prototype.writeUint32 = function( d ) {
-		if (this.logWrite) console.log("    #"+this.offset+"=",d);
+		if (this.logWrite) console.log("    #".blue+String(this.offset).blue.bold+":",d);
 		this.offset += 4;
-		this.stream.write( pack.pack('<I', [d]) );
+		fs.writeSync( this.fd, pack4b(d, false), 0, 4 );
 	}
 
 	/**
 	 * Write a 32-bit signed number
 	 */
 	BinaryEncoder.prototype.writeInt32 = function( d ) {
-		if (this.logWrite) console.log("    #"+this.offset+"=",d);
+		if (this.logWrite) console.log("    #".blue+String(this.offset).blue.bold+":",d);
 		this.offset += 4;
-		this.stream.write( pack.pack('<i', [d]) );
+		fs.writeSync( this.fd, pack4b(d, true), 0, 4 );
 	}
 
 	/**
 	 * Write a 32-bit float number
 	 */
 	BinaryEncoder.prototype.writeFloat32 = function( d ) {
-		if (this.logWrite) console.log("    #"+this.offset+"=",d);
+		if (this.logWrite) console.log("    #".blue+String(this.offset).blue.bold+":",d);
 		this.offset += 4;
-		this.stream.write( pack.pack('<f', [d]) );
+		fs.writeSync( this.fd, pack4f(d), 0, 4 );
 	}
 
 	/**
 	 * Write an 64-bit float number
 	 */
 	BinaryEncoder.prototype.writeFloat64 = function( d ) {
-		if (this.logWrite) console.log("    #"+this.offset+"=",d);
+		if (this.logWrite) console.log("    #".blue+String(this.offset).blue.bold+":",d);
 		this.offset += 8;
-		this.stream.write( pack.pack('<d', [d]) );
+		fs.writeSync( this.fd, pack8f(d), 0, 8 );
 	}
 
 	/**
 	 * Write a string stream
 	 */
 	BinaryEncoder.prototype.writeString = function( d ) {
-		if (this.logWrite) console.log("    #"+this.offset+"=",d);
+		if (this.logWrite) console.log("    #".blue+String(this.offset).blue.bold+":",d);
 		this.offset += d.length;
-		this.stream.write( d );
+		fs.writeSync( this.fd, d );
 	}
 
 	////////////////////////////////////////////////////////////
@@ -412,7 +483,7 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "colors", "three-bu
 		// Calculate pad size
 		var padSize = (length - ((this.offset + pad) % length)) % 8;
 		if (padSize == 0) return;
-		if (this.logAlign) console.log("ALN @"+this.offset+": length=",length,", pad=", pad, ", effective=",padSize);
+		if (this.logAlign) console.log("ALN ".cyan+"@".blue+String(this.offset).blue.bold+": length=",length,", pad=", pad, ", effective=",padSize);
 
 		// Write opcode + write pad characters
 		this.writeUint8( OP.PAD_ALIGN | padSize );
@@ -621,7 +692,7 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "colors", "three-bu
 		// Check for external references
 		var dbRef = this.dbObjects.indexOf(v);
 		if (dbRef >= 0) {
-			if (this.logTag) console.log("TAG @"+this.offset+": import="+this.dbTags[dbRef]);
+			if (this.logTag) console.log("TAG ".cyan+"@".blue+String(this.offset).blue.bold+": import="+this.dbTags[dbRef]);
 			this.writeUint8( OP.IMPORT );
 			this.writeUint16( this.getKeyIndex(this.dbTags[dbRef]) );
 			return;
@@ -629,7 +700,7 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "colors", "three-bu
 
 		// If we have a tag, tag this primitive first
 		if (tag) {
-			if (this.logTag) console.log("TAG @"+this.offset+": export="+this.bundleName+'/'+tag);
+			if (this.logTag) console.log("TAG ".cyan+"@".blue+String(this.offset).blue.bold+": export="+this.bundleName+'/'+tag);
 			this.writeUint8( OP.EXPORT );
 			this.writeUint16( this.getKeyIndex(tag) );
 
@@ -641,24 +712,24 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "colors", "three-bu
 		if (typeof(v) == "undefined") {
 
 			// Store undefined
-			if (this.logPrimitive) console.log("PRM @"+this.offset+": prim=undefined");
+			if (this.logPrimitive) console.log("PRM ".cyan+"@".blue+String(this.offset).blue.bold+": prim=undefined");
 			this.writeUint8( OP.UNDEFINED );
 
 		} else if (v === null) {
 
 			// Store null
-			if (this.logPrimitive) console.log("PRM @"+this.offset+": prim=null");
+			if (this.logPrimitive) console.log("PRM ".cyan+"@".blue+String(this.offset).blue.bold+": prim=null");
 			this.writeUint8( OP.NULL );
 
 		} else if (typeof(v) == "boolean") {
 
 			// Store boolean
-			if (this.logPrimitive) console.log("PRM @"+this.offset+": prim=false");
+			if (this.logPrimitive) console.log("PRM ".cyan+"@".blue+String(this.offset).blue.bold+": prim=false");
 			this.writeUint8( OP.FALSE + (v ? 1 : 0) );
 
 		} else if (typeof(v) == "string") {
 
-			if (this.logPrimitive) console.log("PRM @"+this.offset+": prim=string");
+			if (this.logPrimitive) console.log("PRM ".cyan+"@".blue+String(this.offset).blue.bold+": prim=string");
 			if (v.length < 8) {
 				// Up to 16 characters, the length can fit in header
 				this.writeUint8( OP.STRING_3 | v.length );
@@ -680,7 +751,7 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "colors", "three-bu
 		} else if (typeof(v) == "number") {
 
 			// Store a single number
-			if (this.logPrimitive) console.log("PRM @"+this.offset+": prim=number");
+			if (this.logPrimitive) console.log("PRM ".cyan+"@".blue+String(this.offset).blue.bold+": prim=number");
 			var tn = this.getNumType(v);
 			this.writeUint8( OP.NUMBER_1 | tn );
 			this.writeNum( v, tn );
@@ -691,19 +762,19 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "colors", "three-bu
 			(v instanceof Float32Array) || (v instanceof Float64Array)) {
 
 			// Encode array
-			if (this.logPrimitive) console.log("PRM @"+this.offset+": prim=array");
+			if (this.logPrimitive) console.log("PRM ".cyan+"@".blue+String(this.offset).blue.bold+": prim=array");
 			this.writeEncodedArray( v );
 
 		} else if (v.constructor === ({}).constructor) {
 
 			// Encode dictionary
-			if (this.logPrimitive) console.log("PRM @"+this.offset+": prim=dict");
+			if (this.logPrimitive) console.log("PRM ".cyan+"@".blue+String(this.offset).blue.bold+": prim=dict");
 			this.writeEncodedDict( v );				
 
 		} else {
 
 			// Encode object in the this
-			if (this.logPrimitive) console.log("PRM @"+this.offset+": prim=object");
+			if (this.logPrimitive) console.log("PRM ".cyan+"@".blue+String(this.offset).blue.bold+": prim=object");
 			this.writeEncodedEntity( v );				
 
 		}
@@ -755,7 +826,7 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "colors", "three-bu
 
 		// Log
 		if (this.logDiffEnc)
-			console.log("DIF @"+this.offset+": len="+srcArray.length+", type="+_TYPENAME[numType]+", enctype="+_ENCTYPENAME[arrType]+", start=",srcArray[0]);
+			console.log("DIF ".cyan+"@".blue+String(this.offset).blue.bold+": len="+srcArray.length+", type="+_TYPENAME[numType]+", enctype="+_ENCTYPENAME[arrType]+", start=",srcArray[0]);
 
 		// Write first value
 		this.writeNum( srcArray[0], numType );
@@ -771,7 +842,7 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "colors", "three-bu
 			}
 
 			// Log delta
-			if (this.logDiffEnc && this.logWrite) console.log("    %"+this.offset+": delta=",delta,", real=",srcArray[i],", last=",lastVal);
+			if (this.logDiffEnc && this.logWrite) console.log("    %".blue+String(this.offset).blue.bold+": delta=",delta,", real=",srcArray[i],", last=",lastVal);
 
 			// Write delta according to difference array format
 			if (arrType == NUMTYPE.DIFF8) {
@@ -794,7 +865,7 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "colors", "three-bu
 		// If array is empty, write empty array header
 		if (srcArray.length == 0) {
 			// Write ARRAY_EMPTY header
-			if (this.logArray) console.log(" [] @"+this.offset+": empty");
+			if (this.logArray) console.log(" [] ".cyan+"@".blue+String(this.offset).blue.bold+": empty");
 			this.writeUint8( OP.ARRAY_EMPTY );
 			return;
 		}
@@ -807,15 +878,15 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "colors", "three-bu
 
 			// Write ARRAY_X header
 			if (srcArray.length < 256) {
-				if (this.logArray) console.log(" [] @"+this.offset+": x8, len=", srcArray.length);
+				if (this.logArray) console.log(" [] ".cyan+"@".blue+String(this.offset).blue.bold+": x8, len=", srcArray.length);
 				this.writeUint8( OP.ARRAY_X_8 );
 				this.writeUint8( srcArray.length );
 			} else if (srcArray.length < 65536) {
-				if (this.logArray) console.log(" [] @"+this.offset+": x16, len=", srcArray.length);
+				if (this.logArray) console.log(" [] ".cyan+"@".blue+String(this.offset).blue.bold+": x16, len=", srcArray.length);
 				this.writeUint8( OP.ARRAY_X_16 );
 				this.writeUint16( srcArray.length );
 			} else {
-				if (this.logArray) console.log(" [] @"+this.offset+": x32, len=", srcArray.length);
+				if (this.logArray) console.log(" [] ".cyan+"@".blue+String(this.offset).blue.bold+": x32, len=", srcArray.length);
 				this.writeUint8( OP.ARRAY_X_32 );
 				this.writeUint32( srcArray.length );
 			}
@@ -823,11 +894,10 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "colors", "three-bu
 			// Write primitives
 			for (var i=0; i<srcArray.length; i++) {
 
-				// Check if we can compact the following  up to 16 numerical values
+				// Check if we can compact the following up to 255 numerical values
 				var canCompact = false;
 				if (this.useCompact) {
-					for (var j=Math.min(srcArray.length, 255); j>1; j--) {
-						if (i+j >= srcArray.length) continue;
+					for (var j=Math.min(srcArray.length-1-i, 255); j>2; j--) {
 
 						// Check if the current slice is numeric
 						var slice = srcArray.slice(i,i+j),
@@ -835,7 +905,7 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "colors", "three-bu
 						if (sliceType !== undefined) {
 
 							// Write opcode
-							if (this.logCompact) console.log(" >< @"+this.offset+": compact, len=", j,", type=", _TYPENAME[sliceType], ", values=",slice);
+							if (this.logCompact) console.log(" >< ".cyan+"@".blue+String(this.offset).blue.bold+": compact, len=", j,", type=", _TYPENAME[sliceType], ", values=",slice);
 							this.writeUint8(
 									OP.NUMBER_N |	// We have N consecutive numbers
 									sliceType		// Consecutive numbers type
@@ -882,26 +952,26 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "colors", "three-bu
 				// Add alignment with 2-byte long header
 				if (arrayType <= NUMTYPE.UINT8) {
 				} else if (arrayType <= NUMTYPE.UINT16) {
-					if (this.logArray) console.log(" <> @"+this.offset+": align=2, pad="+(2+extraPad));
+					if (this.logArray) console.log(" <> ".cyan+"@".blue+String(this.offset).blue.bold+": align=2, pad="+(2+extraPad));
 					this.writeAlign(2, 2+extraPad);
 				} else if (arrayType <= NUMTYPE.FLOAT32) {
-					if (this.logArray) console.log(" <> @"+this.offset+": align=4, pad="+(2+extraPad));
+					if (this.logArray) console.log(" <> ".cyan+"@".blue+String(this.offset).blue.bold+": align=4, pad="+(2+extraPad));
 					this.writeAlign(4, 2+extraPad);
 				} else  {
-					if (this.logArray) console.log(" <> @"+this.offset+": align=8, pad="+(2+extraPad));
+					if (this.logArray) console.log(" <> ".cyan+"@".blue+String(this.offset).blue.bold+": align=8, pad="+(2+extraPad));
 					this.writeAlign(8, 2+extraPad);
 				}
 
 				// Write header
 				if ((arrayType & 0x18) != 0) {
 					// We are using differential encoding
-					if (this.logArray) console.log("[Δ] @"+this.offset+": n8, type=", _TYPENAME[arrayType & 0x07],", len=", srcArray.length);
+					if (this.logArray) console.log("[Δ] ".cyan+"@".blue+String(this.offset).blue.bold+": n8, type=", _TYPENAME[arrayType & 0x07],", len=", srcArray.length);
 					this.writeUint8( OP.DIFF_ARRAY_8 | arrayType );
 					this.writeUint8( srcArray.length );
 					this.writeDiffEncNum( srcArray, arrayType );
 				} else {
 					// We are using straight array
-					if (this.logArray) console.log(" [] @"+this.offset+": n8, type=", _TYPENAME[arrayType],", len=", srcArray.length);
+					if (this.logArray) console.log(" [] ".cyan+"@".blue+String(this.offset).blue.bold+": n8, type=", _TYPENAME[arrayType],", len=", srcArray.length);
 					this.writeUint8( OP.ARRAY_8 | arrayType );
 					this.writeUint8( srcArray.length );
 					this.writeNum( srcArray, arrayType );
@@ -912,26 +982,26 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "colors", "three-bu
 				// Add alignment with 3-byte long header
 				if (arrayType <= NUMTYPE.UINT8) {
 				} else if (arrayType <= NUMTYPE.UINT16) {
-					if (this.logArray) console.log(" <> @"+this.offset+": align=2, pad="+(3+extraPad));
+					if (this.logArray) console.log(" <> ".cyan+"@".blue+String(this.offset).blue.bold+": align=2, pad="+(3+extraPad));
 					this.writeAlign(2, 3+extraPad);
 				} else if (arrayType <= NUMTYPE.FLOAT32) {
-					if (this.logArray) console.log(" <> @"+this.offset+": align=4, pad="+(3+extraPad));
+					if (this.logArray) console.log(" <> ".cyan+"@".blue+String(this.offset).blue.bold+": align=4, pad="+(3+extraPad));
 					this.writeAlign(4, 3+extraPad);
 				} else  {
-					if (this.logArray) console.log(" <> @"+this.offset+": align=8, pad="+(3+extraPad));
+					if (this.logArray) console.log(" <> ".cyan+"@".blue+String(this.offset).blue.bold+": align=8, pad="+(3+extraPad));
 					this.writeAlign(8, 3+extraPad);
 				}
 
 				// Write header
 				if ((arrayType & 0x18) != 0) {
 					// We are using differential encoding
-					if (this.logArray) console.log("[Δ] @"+this.offset+": n16, type=", _TYPENAME[arrayType & 0x07],", len=", srcArray.length);
+					if (this.logArray) console.log("[Δ] ".cyan+"@".blue+String(this.offset).blue.bold+": n16, type=", _TYPENAME[arrayType & 0x07],", len=", srcArray.length);
 					this.writeUint8( OP.DIFF_ARRAY_16 | arrayType );
 					this.writeUint16( srcArray.length );
 					this.writeDiffEncNum( srcArray, arrayType );
 				} else {
 					// We are using straight array
-					if (this.logArray) console.log(" [] @"+this.offset+": n16, type=", _TYPENAME[arrayType],", len=", srcArray.length);
+					if (this.logArray) console.log(" [] ".cyan+"@".blue+String(this.offset).blue.bold+": n16, type=", _TYPENAME[arrayType],", len=", srcArray.length);
 					this.writeUint8( OP.ARRAY_16 | arrayType );
 					this.writeUint16( srcArray.length );
 					this.writeNum( srcArray, arrayType );
@@ -942,26 +1012,26 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "colors", "three-bu
 				// Add alignment with 5-byte long header
 				if (arrayType <= NUMTYPE.UINT8) {
 				} else if (arrayType <= NUMTYPE.UINT16) {
-					if (this.logArray) console.log(" <> @"+this.offset+": align=2, pad="+(5+extraPad));
+					if (this.logArray) console.log(" <> ".cyan+"@".blue+String(this.offset).blue.bold+": align=2, pad="+(5+extraPad));
 					this.writeAlign(2, 5+extraPad);
 				} else if (arrayType <= NUMTYPE.FLOAT32) {
-					if (this.logArray) console.log(" <> @"+this.offset+": align=4, pad="+(5+extraPad));
+					if (this.logArray) console.log(" <> ".cyan+"@".blue+String(this.offset).blue.bold+": align=4, pad="+(5+extraPad));
 					this.writeAlign(4, 5+extraPad);
 				} else  {
-					if (this.logArray) console.log(" <> @"+this.offset+": align=8, pad="+(5+extraPad));
+					if (this.logArray) console.log(" <> ".cyan+"@".blue+String(this.offset).blue.bold+": align=8, pad="+(5+extraPad));
 					this.writeAlign(8, 5+extraPad);
 				}
 
 				// Write header
 				if ((arrayType & 0x18) != 0) {
 					// We are using differential encoding
-					if (this.logArray) console.log("[Δ] @"+this.offset+": n32, type=", _TYPENAME[arrayType & 0x07],", len=", srcArray.length);
+					if (this.logArray) console.log("[Δ] ".cyan+"@".blue+String(this.offset).blue.bold+": n32, type=", _TYPENAME[arrayType & 0x07],", len=", srcArray.length);
 					this.writeUint8( OP.DIFF_ARRAY_32 | arrayType );
 					this.writeUint32( srcArray.length );
 					this.writeDiffEncNum( srcArray, arrayType );
 				} else {
 					// We are using straight array
-					if (this.logArray) console.log(" [] @"+this.offset+": n32, type=", _TYPENAME[arrayType],", len=", srcArray.length);
+					if (this.logArray) console.log(" [] ".cyan+"@".blue+String(this.offset).blue.bold+": n32, type=", _TYPENAME[arrayType],", len=", srcArray.length);
 					this.writeUint8( OP.ARRAY_32 | arrayType );
 					this.writeUint32( srcArray.length );
 					this.writeNum( srcArray, arrayType );
@@ -983,9 +1053,9 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "colors", "three-bu
 			var refID = this.encodedReferences.indexOf(object);
 			if (refID >= 0) {
 				// Write reference
-				if (this.logRef) console.log("PTR @"+this.offset+": ref=",refID);
-				this.writeUint8( OP.REF_16 );
-				this.writeUint16( refID );
+				if (this.logRef) console.log("PTR ".cyan+"@".blue+String(this.offset).blue.bold+": ref=",refID);
+				this.writeUint8( OP.REF_24 );
+				this.writeUint24( refID );
 				return
 			}
 		}
@@ -1005,8 +1075,34 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "colors", "three-bu
 			};
 		}
 
+		// Create property table
+		var propertyTable = new Array( PROPERTIES[eid].length );
+		for (var i=0; i<PROPERTIES[eid].length; i++) {
+			propertyTable[i] = object[ PROPERTIES[eid][i] ];
+		}
+
 		// Handle ByVal cross-references
 		if (this.useCrossRef > 1) {
+
+			// Check if we have a BST for this type
+			if (this.encodedByValBST[eid] !== undefined) {
+				var id = this.encodedByValBST[eid].search( propertyTable );
+				if (id.length > 0) {
+					if (this.logRef) console.log("CPY ".cyan+"@".blue+String(this.offset).blue.bold+": ref=",id[0]);
+					this.writeUint8( OP.REF_24 );
+					this.writeUint24( id[0] );
+					return;
+				}
+			} else {
+				// Create a new BST for this entity type
+				this.encodedByValBST[eid] = new BinarySearchTree({
+					compareKeys: objectBstComparison,
+					checkValueEquality: objectBstEquals,
+					unique: true,
+				});
+			}
+
+			/*
 			for (var i=0; i<this.encodedReferences.length; i++) {
 				if (this.encodedReferences[i] instanceof ENTITIES[eid][0]) {
 
@@ -1021,30 +1117,30 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "colors", "three-bu
 
 					// If all properties match, we found a reference
 					if (propmatch) {
-						if (this.logRef) console.log("CPY @"+this.offset+": ref=",i);
-						this.writeUint8( OP.REF_16 );
+						if (this.logRef) console.log("CPY ".cyan+"@".blue+String(this.offset).blue.bold+": ref=",i);
+						this.writeUint8( OP.REF_24 );
 						this.writeUint16( i );
 						return;
 					}
 				}
 			}
+			*/
 		}
 
 		// Keep object in cross-referencing database
 		if (this.useCrossRef > 0) {
-			if (this.encodedReferences.length < 65536) {
+			if (this.encodedReferences.length < 16777216) {
+
+				// Update byref table
 				this.encodedReferences.push(object);
-				if (this.encodedReferences.length == 65536)
+
+				// Update BST
+				if (this.useCrossRef > 1)
+					this.encodedByValBST[eid].insert( propertyTable, this.encodedReferences.length-1 );
+
+				if (this.encodedReferences.length == 16777216)
 					console.error("References table is full");
 			}
-		}
-
-		// Prepare property table
-		var propertyTable = new Array( PROPERTIES[eid].length );
-
-		// Collect object properties
-		for (var i=0; i<PROPERTIES[eid].length; i++) {
-			propertyTable[i] = object[ PROPERTIES[eid][i] ];
 		}
 
 		// Post-process entities (if needed)
@@ -1060,7 +1156,7 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "colors", "three-bu
 		}
 
 		// Write down property table
-		if (this.logEntity) console.log("ENT @"+this.offset," eid=" + eid);
+		if (this.logEntity) console.log("ENT ".cyan+"@".blue+String(this.offset).blue.bold,": eid=" + eid);
 		this.writeEncodedArray( propertyTable );
 
 	}

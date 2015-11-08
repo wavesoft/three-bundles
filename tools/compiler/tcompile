@@ -1,0 +1,5 @@
+#!/bin/bash
+# Setup environment
+export NODE_PATH=$NODE_PATH:$(pwd)/node_modules
+# Run compiler
+cat ./node_modules/.bin/r.js | node compiler.js $*

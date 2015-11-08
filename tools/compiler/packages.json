@@ -1,0 +1,12 @@
+{
+	"name": "three-bundles",
+	"version": "0.0.1",
+	"dependencies": {
+		"binary-search-tree": ">=0.2.4",
+		"colors": ">=1.1.2",
+		"mock-browser": ">=0.91.34",
+		"node-getopt": ">=0.2.3",
+		"requirejs": ">=2.1.20",
+		"xmlhttprequest": ">=1.8.0"
+	}
+}

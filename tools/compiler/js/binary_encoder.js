@@ -35,12 +35,12 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "colors", "three-bu
 	 * description with the one we faked using MockBrowser....
 	 */
 	var mock = new MockBrowser.mocks.MockBrowser();
-	ENTITIES[32][0] = mock.getDocument().createElement('img').constructor;
+	ENTITIES[66][0] = mock.getDocument().createElement('img').constructor;
 
 	/**
 	 * Custom function to embed image payload when compiling the image element
 	 */
-	ENTITIES[32][3] = function( values ) {
+	ENTITIES[66][3] = function( values, object ) {
 
 		var fname = values[0];
 		console.log("INFO:".green, "Embedding",fname.magenta);
@@ -70,6 +70,15 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "colors", "three-bu
 		values[0] = view;
 
 	};
+
+	/**
+	 * CubeCamera needs a special way for extracting properties
+	 */
+	ENTITIES[62][3] = function( values, object ) {
+		values[0] = object.cameraPX.near;
+		values[1] = object.cameraPX.far;
+		values[2] = object.cameraPX.renderTarget.width;
+	}
 
 	/**
 	 * String representation of every type
@@ -1032,9 +1041,9 @@ define(["three", "fs", "bufferpack", "util", "mock-browser", "colors", "three-bu
 			propertyTable[i] = object[ PROPERTIES[eid][i] ];
 		}
 
-		// Post-process entities
+		// Post-process entities (if needed)
 		if (ENTITIES[eid].length > 3)
-			ENTITIES[eid][3]( propertyTable );
+			ENTITIES[eid][3]( propertyTable, object );
 
 		// Start entity
 		if (eid < 32) {

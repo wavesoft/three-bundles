@@ -1,48 +1,77 @@
-var colors = require("colors"),
-	hideWarn = false;
+var colors = require("colors"), hideWarn = false;
 console.warn = function() { if (hideWarn) return; console.log.apply(console, ["WARN:".yellow].concat(Array.prototype.slice.call(arguments)) ); };
 console.error = function() { console.log.apply(console, ["ERROR:".red].concat(Array.prototype.slice.call(arguments)) ); };
+console.info = function() { console.log.apply(console, ["INFO:".green].concat(Array.prototype.slice.call(arguments)) ); };
 
 // Validate command-line
+opt = require('node-getopt').create([
+  ['m' , 'materials=BUNDLE'    , 'Separate materials in a different bundle'],
+  ['g' , 'geometries=BUNDLE'   , 'Separate geometries in a different bundle'],
+  ['t' , 'textures=BUNDLE'     , 'Separate textures in a different bundle'],
+  ['o' , 'out=BUNDLE'	  	   , 'Specify the name of the bundle'],
+  ['b' , 'bundle-dir=DIR'  	   , 'Specify bundle base directory'],
+  ['L' , 'load=BUNDLE+'  	   , 'Load the specified bundle before compiling'],
+  ['h' , 'help'                , 'Display this help'],
+  ['v' , 'version'             , 'Show version']
+])
+.setHelp(
+  "Usage: node r.js compile.js [OPTION] BUNDLE [BUNDLE ...]\n" +
+  "Compile one or more bundles to a binary format.\n" +
+  "\n" +
+  "[[OPTIONS]]\n" +
+  "\n" +
+  "Installation: npm install three-bundles\n" +
+  "Respository:  https://github.com/wavesoft/three-bundles"
+)
+.bindHelp()     // bind option 'help' to default action
+.parseSystem(); // parse command line
 
+// Validate arguments
+if (opt.argv.length < 2) {
+	console.error("Please specify at least one or module to compile!");
+	process.exit(1);
+}
+
+// If we have no output file, guess one
+if (!opt.options['out']) {
+	var outName = opt.argv[opt.argv.length-1].split("."); outName.pop();
+	opt.options['out'] = outName.join(".") + ".3bd";
+}
 
 // Configure
 requirejs.config({
-
-	// Load all modules from 'js/'
-	'baseUrl': 'js',
 
 	// Bundles package
 	'packages': [
 		{
             'name'      : 'three-bundles',
-            'location'  : '../../../js'
+            'location'  : '../../js'
 		}
 	],
 
 	// Configure threeBundles
     threeBundles: {
-        'baseUrl': '../../../examples/bundles'
+        'baseUrl': opt.options['bundle-dir'] || '.'
     },
 
     // Load required modules
     deps: [
     	// 1) Fake browser DOM Environment
-    	"expose-dom",
+    	"js/expose-dom",
     	// 2) Load THREE.js
     	"three", 
     	// 3) Expose THREE to global scope (for shims to work)
-    	"expose-three",
+    	"js/expose-three",
     	// 4) Overwrite THREE.XHRLoader with file-based equivalent 
-    	"extras/FileXHRLoader",
+    	"js/extras/FileXHRLoader",
     	// 5) Load three-bundles
     	"three-bundles",
     ],
 
     // Paths
 	paths: {
-		'three' : 'lib/three-0.73.0.min',
-		'text' 	: 'lib/text-2.0.14'
+		'three' : 'js/lib/three-0.73.0.min',
+		'text' 	: 'js/lib/text-2.0.14'
 	}
 
 });
@@ -50,97 +79,218 @@ requirejs.config({
 console.log("INFO:".green, "Initializing compiler");
 
 // Compiler entry point
-requirejs(["require", "three", "binary_encoder"], function(require, THREE, BinaryEncoder) {
+hideWarn = true;
+requirejs(["require", "three", "js/binary_encoder", "three-bundles"], function(require, THREE, BinaryEncoder, ThreeBundles) {
+	hideWarn = false;
 
-	// Load bundle
-	console.log("INFO:".green, "Loading bundle");
-	hideWarn = true;
+	// Bundle writing sequence
+	var preloadCounter = 0,
+		currentObjectName = null,
+		bundleMaterials = [],
+		bundleGeometries = [],
+		bundleTextures = [],
+		bundleMeshes = [],
+		bundleObjects = [],
+		bundleOthers = [],
+		writeBundle = function() {
 
-	require(["bundle!hello.bundle"], function(Bundle) {
-
-		console.log("INFO:".green, "Encoding objects");
-		hideWarn = false;
-
-		function encodeMaterials( mesh, encoder, db ) {
-			hideWarn = true;
-
-			var meshes = [], geometries = [], materials = [], textures = [];
-			function encodeObject3D( object ) {
-
-				// Collect meshes
-				if (object instanceof THREE.Mesh) {
-					meshes.push( object );
+			// Check if we have to separate textures
+			if (opt.options['textures']) {
+				var encoder = new BinaryEncoder( opt.options['textures'] );
+				encoder.setDatabase( ThreeBundles.database );
+				for (var i=0; i<bundleTextures.length; i++) {
+					encoder.encode( bundleTextures[i][0], bundleTextures[i][1] );
 				}
+				encoder.close();
+			} else {
+				// Move textures to materials
+				bundleMaterials = bundleTextures.concat( bundleMaterials );
+			}
 
-				// Collect geometries
-				if (object.geometry !== undefined)
-					geometries.push( object.geometry );
+			// Check if we have to separate materials
+			if (opt.options['materials']) {
+				var encoder = new BinaryEncoder( opt.options['materials'] );
+				encoder.setDatabase( ThreeBundles.database );
+				for (var i=0; i<bundleMaterials.length; i++) {
+					encoder.encode( bundleMaterials[i][0], bundleMaterials[i][1] );
+				}
+				encoder.close();
+			} else {
+				// Move materials to others
+				bundleOthers = bundleMaterials.concat( bundleOthers );
+			}
 
-				// Collect materials
-				if (object.material !== undefined) {
+			// Check if we have to separate geometries
+			if (opt.options['geometries']) {
+				var encoder = new BinaryEncoder( opt.options['geometries'] );
+				encoder.setDatabase( ThreeBundles.database );
+				for (var i=0; i<bundleGeometries.length; i++) {
+					encoder.encode( bundleGeometries[i][0], bundleGeometries[i][1] );
+				}
+				for (var i=0; i<bundleMeshes.length; i++) {
+					encoder.encode( bundleMeshes[i][0], bundleMeshes[i][1] );
+				}
+				encoder.close();
+			} else {
+				// Move geometries to others
+				bundleOthers = bundleGeometries.concat( bundleOthers );
+				bundleOthers = bundleMeshes.concat( bundleOthers );
+			}
 
-					// Collect materials
-					var mat = object.material;
-					materials.push( mat );
+			// Encode everything else in the bundle
+			var encoder = new BinaryEncoder( opt.options['out'] );
+			encoder.setDatabase( ThreeBundles.database );
+			for (var i=0; i<bundleObjects.length; i++) {
+				encoder.encode( bundleObjects[i][0], bundleObjects[i][1] );
+			}
+			for (var i=0; i<bundleOthers.length; i++) {
+				encoder.encode( bundleOthers[i][0], bundleOthers[i][1] );
+			}
+			encoder.close();
 
-					// Collect textures
-					for (var k in mat) {
-						if ((mat[k] instanceof THREE.Texture) ||
-							(mat[k] instanceof THREE.CompressedTexture)) {
+			// Warn for compression
+			console.warn("You might want to consider compressing the bundles")
 
-							// If this texture has no name assign materian name
-							if (!mat[k].name && mat.name) {
-								mat[k].name = mat.name + "_" + k;
-							}
+		};
 
-							// Store texture
-							textures.push( mat[k] );
+	// Encode an Object3D
+	var encodeObject3D = function( object, key ) {
 
-						}
+		// Collect meshes (works only when traversing)
+		if (object instanceof THREE.Mesh) {
+			if (opt.options['geometries']) {
+				bundleMeshes.push( [object, currentObjectName+":mesh/"+(object.name || object.uuid)] );
+			}
+		}
+
+		// Collect geometries if requested
+		if ((object.geometry !== undefined) && (opt.options['geometries']))
+			if (bundleGeometries.name)
+				bundleGeometries.push( [ object.geometry, currentObjectName+"::geometry/"+(bundleGeometries.name || bundleGeometries.uuid) ] );
+
+		// Collect materials if requested
+		if (object.material !== undefined) {
+
+			// Collect materials
+			var mat = object.material;
+			if (opt.options['materials']) {
+				bundleMaterials.push( [ mat, currentObjectName+":material/"+(mat.name || mat.uuid)] );
+			}
+
+			// Collect textures
+			hideWarn = true;
+			for (var k in mat) {
+				if ((mat[k] instanceof THREE.Texture) ||
+					(mat[k] instanceof THREE.CompressedTexture)) {
+
+					// If this texture has no name assign materian name
+					if (!mat[k].name && mat.name) {
+						mat[k].name = mat.name + "_" + k;
+					}
+
+					// Store texture
+					bundleTextures.push( [ mat[k], currentObjectName+":texture/"+(mat[k].name || mat[k].uuid) ] );
+
+				}
+			}
+			hideWarn = false;
+
+		}
+
+	}
+
+	// Encode the specified object under the given key
+	var encodeObject = function( object, key ) {
+
+		// [A] Separate textures
+		if  ((object instanceof THREE.CubeTexture) ||
+			 (object instanceof THREE.CompressedTexture) ||
+			 (object instanceof THREE.Texture))
+		{
+			// Collect texture
+			bundleTextures.push( [object, key] );
+		}
+
+		// [B] Separate materials
+		else if (object instanceof THREE.Material)
+		{
+			// Collect material
+			bundleMaterials.push( [object, key] );
+		}
+
+		// [C] Separate geometry
+		else if ((object instanceof THREE.BufferGeometry) ||
+			 	 (object instanceof THREE.Geometry))
+		{
+			// Collect geometries
+			bundleGeometries.push( [object, key] );
+		}
+
+		// [D] Separate Object3D objects
+		else if (object instanceof THREE.Object3D)
+		{
+			// Encode children
+			currentObjectName = key;
+			object.traverse( encodeObject3D );
+			// Keep object
+			bundleObjects.push( [object, key] );
+		}
+
+		// [E] Encode everything else
+		else {
+			bundleOthers.push( [object, key] );
+		}
+
+	}
+
+	// Bundle loading sequence
+	var bundlesToLoad = [],
+		loadNextBundle = function() {
+
+			// If we ran out of bundles to load, write them down
+			if (bundlesToLoad.length == 0) {
+				writeBundle();
+				return;
+			};
+
+			// Get next bundle to load
+			var bundle = bundlesToLoad.shift();
+			console.log("INFO:".green, "Loading bundle", ((opt.options['bundle-dir'] || '.')+'/'+bundle).magenta);
+
+			// Load bundle
+			hideWarn = true;
+			require(["bundle!"+bundle], function( bundle ) {
+				hideWarn = false;
+
+				// Start encoding objects if we passed the pre-loading phase
+				if (--preloadCounter <= 0) {
+					for (var k in bundle) {
+						if (!bundle.hasOwnProperty(k)) continue;
+						encodeObject( bundle[k], k );
 					}
 				}
 
-			}
+				// Load next
+				loadNextBundle();
 
-			// Tranverse object
-			object.traverse( encodeObject3D );
+			});
 
-			// Encode textures
-			for (var i=0; i<textures.length; i++) {
-				encoder.encode( textures[i], 'texture/' + (textures[i].name || textures[i].uuid) );
-			}
+		};
 
-			// Then materials
-			for (var i=0; i<materials.length; i++) {
-				encoder.encode( materials[i], 'material/' + (materials[i].name || materials[i].uuid) );
-			}
-
-			hideWarn = false;
+	// Collect the bundles to preload
+	if (opt.load) {
+		for (var i=0; i<opt.load.length; i++) {
+			preloadCounter++;
+			bundlesToLoad.push( opt.load[i] );
 		}
+	}
 
-		// Extract all textures
-		var db = { };
+	// Load bundles to process
+	for (var i=1; i<opt.argv.length; i++) {
+		bundlesToLoad.push( opt.argv[i] );
+	}
 
-		var object = Bundle.RESOURCES.mesh['utf8']['ben_dds.utf8_js'];
-		object.traverse( function( node ) {
-			node.castShadow = true;
-			node.receiveShadow = true;
-		} );
+	// Start loading
+	loadNextBundle();
 
-		// // First encode all materials
-		var encoder = new BinaryEncoder( 'materials.3bd' );
-		encoder.setDatabase(db);
-		encodeMaterials( object, encoder, db );
-		encodeMaterials( Bundle.RESOURCES.mesh['monster.json'], encoder, db );
-		encoder.close();
-
-		// Then encode the scene
-		var encoder = new BinaryEncoder( 'meshes.3bd' );
-		encoder.setDatabase(db);
-		encoder.encode( object, 'mesh/ben' );
-		encoder.encode( Bundle.RESOURCES.mesh['monster.json'], 'mesh/monster' );
-		encoder.close();
-
-	});
-	
 });

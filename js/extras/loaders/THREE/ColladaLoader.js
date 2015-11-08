@@ -3,7 +3,8 @@
 * @author Tony Parisi / http://www.tonyparisi.com/
 */
 
-define(['three'], function(THREE) {
+
+( function() {
 
 	var COLLADA = null;
 	var scene = null;
@@ -5577,4 +5578,4 @@ define(['three'], function(THREE) {
 	};
 
 
-});
+} )();

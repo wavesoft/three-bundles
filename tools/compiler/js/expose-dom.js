@@ -11,4 +11,4 @@ global.window = self;
 // Fake 'XMLHttpRequest' (shall not be used)
 global.XMLHttpRequest = require("xmlhttprequest").XMLHttpRequest;
 
-console.log("INFO:".green, "Creating fake DOM environment");
+console.info("Creating fake DOM environment");

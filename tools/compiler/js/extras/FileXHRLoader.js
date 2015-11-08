@@ -20,7 +20,7 @@
  */
 define(["three", "fs", "colors"], function(THREE, fs, colors) {
 
-    console.info("INFO:".green, "Replacing THREE.XHRLoader with local-file loader");
+    console.info("Replacing THREE.XHRLoader with local-file loader");
 
     THREE.XHRLoader = function ( manager ) {
 

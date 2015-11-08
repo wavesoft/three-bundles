@@ -3,10 +3,10 @@
  * A mesh! plugin for loading THREE Meshes
  */
 define(["three", "three-bundles/utils", "three-bundles/parsers", 
-		"three-bundles/extras/OBJLoader", 
-		"three-bundles/extras/ColladaLoader", 
-		"three-bundles/extras/UTF8Loader",
-		"three-bundles/extras/MTLLoader"
+		"three-bundles/extras/loaders/OBJLoader", 
+		"three-bundles/extras/loaders/ColladaLoader", 
+		"three-bundles/extras/loaders/UTF8Loader",
+		"three-bundles/extras/loaders/MTLLoader"
 		], function(THREE, Utils, Parsers) {
 
 	THREE.Loader.Handlers.add( /\.dds$/i, new THREE.DDSLoader() );

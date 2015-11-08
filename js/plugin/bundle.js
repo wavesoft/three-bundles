@@ -6,178 +6,147 @@
  * it's powerul dependency solving mechanism.
  *
  */
-define(["three", "three-bundles/utils", "three-bundles/parsers"], function(THREE, Utils, Parsers) {
+define(["three", "three-bundles/utils",
+		"three-bundles/extras/loaders/THREE/DDSLoader"
+	], function(THREE, Utils) {
 
-    // Return definition
-    return {
+	// Define loader handlers
+	THREE.Loader.Handlers.add( /\.dds$/i, new THREE.DDSLoader() );
+	THREE.Loader.Handlers.add( /\.(jpg|jpeg|gif|png|bmp)$/i, new THREE.ImageLoader() );
 
-        load: function (name, req, onload, config) {
+	// Loader instance singletons
+	var loaderInstances = { },
+		getLoaderSingleton = function( className, classType ) {
+			if (loaderInstances[className] == undefined)
+				loaderInstances[className] = new classType();
+			return loaderInstances[className];
+		};
 
-            // Helper function to set a property in
-            // an object by path
-            var setByPath = function( object, path, value ) {
-                var parts = path.split("/"), target = object;
-                // Find and/or create target
-                for (var i=0; i<parts.length-1; i++) {
-                    if (typeof(target[parts[i]]) != 'object') target[parts[i]] = { };
-                    target = target[parts[i]];
-                }
-                // Set property
-                target[parts[parts.length-1]] = value;
-                // Return object
-                return object;
-            }
+	// Return definition
+	return {
 
-            // Define bundle as require.js package
-            requirejs.config({
-                'packages': [
-                    {
-                        'name'      : name,
-                        'location'  : (config.threeBundles.baseUrl || config.baseUrl) + '/' + name
-                    }
-                ]
-            });
+		load: function (name, req, onload, config) {
 
-            //
-        	// Load bundle index
-            //
-            // This module should be just a JS object that specifies
-            // the resources this bundle contains. Upon loading a bundle,
-            // all of it's resources will be pre-cached.
-            //
-        	req([ name + '/index' ], 
+			// Calculate bundle base URL
+			var baseURL = (config.threeBundles.baseUrl || config.baseUrl) + '/' + name;
 
-        		// Now that we have the bundle, start loading
-        		// all it's dependencies.
-        		function(bundleIndex) {
+			// Replace macro in various different types of arguments
+			// that can pass to a loader
+			var replaceMacros = function(loaderArgs) {
+				if (typeof(loaderArgs) == "string") {
 
-        			// Helper counter to check if all resources are loaded
-        			var resourcesPending = 0,
-        				requirements = [],
-        				callbacks = [];
+					// Replace string macros
+					return loaderArgs
+						.replace("$BUNDLE$", baseURL )
+					;
 
-        			// -------------------------
-        			// Materials & Textures
-        			// -------------------------
+				} else if (loaderArgs instanceof Array) {
+					// Replace array items
+					for (var i=0; i<loaderArgs.length; i++)
+						loaderArgs[i] = replaceMacros(loaderArgs[i]);
+					return loaderArgs;
+				} else if (typeof(loaderArgs) == "object") {
+					// Replace object properties
+					for (var k in loaderArgs)
+						if (loaderArgs.hasOwnProperty(k))
+							loaderArgs[k] = replaceMacros(loaderArgs[k]);
+					return loaderArgs;
+				} else {
+					return loaderArgs;
+				}
+			}
 
-        			// Load Textures
-        			if (bundleIndex['texture'])
-        				for (var i=0; i<bundleIndex.texture.length; i++) {
-        					requirements.push( "texture!" + name + '/' + bundleIndex.texture[i] );
-        				}
-        			// Load Shaders
-        			if (bundleIndex['shader'])
-        				for (var i=0; i<bundleIndex.shader.length; i++) {
-        					requirements.push( "shader!" + name + '/' + bundleIndex.shader[i] );
-        				}
-        			// Load Materials
-        			if (bundleIndex['material'])
-        				for (var i=0; i<bundleIndex.material.length; i++) {
-        					requirements.push( "material!" + name + '/' + bundleIndex.material[i] );
-        				}
+			//
+			// Load bundle index
+			//
+			// This module should be just a JS object that specifies
+			// the resources this bundle contains. Upon loading a bundle,
+			// all of it's resources will be pre-cached.
+			//
+			req([ baseURL + '/index' ], function(index) {
 
-        			// -------------------------
-        			// Meshes and Objects
-        			// -------------------------
+				// Check if there 
+				if (index.load == undefined)
+					return;
 
-                    // Load Geometries
-                    if (bundleIndex['geometry'])
-                        for (var i=0; i<bundleIndex.geometry.length; i++) {
-                            requirements.push( "geometry!" + name + '/' + bundleIndex.geometry[i] );
-                        }
-        			// Load Meshes
-        			if (bundleIndex['mesh'])
-        				for (var i=0; i<bundleIndex.mesh.length; i++) {
-        					requirements.push( "mesh!" + name + '/' + bundleIndex.mesh[i] );
-        				}
-        			// Load Objects
-        			if (bundleIndex['object'])
-        				for (var i=0; i<bundleIndex.object.length; i++) {
-        					requirements.push( "object!" + name + '/' + bundleIndex.object[i] );
-        				}
+				//
+				// Completion loading callbacks
+				//
+				var bundleObjects = { },
+					pendingLoading = 0,
+					finalizeLoading = function() {
+						// Fire callback
+						onload( bundleObjects );
+					};
 
-        			// -------------------------
-        			// Sounds
-        			// -------------------------
+				//
+				// Load a resource using the url and the loader instance
+				//
+				var loadResource = function( url, alias, loaderInstance ) {
+					// Increment pending loading counter
+					pendingLoading++;
 
-        			// Load Sounds
-        			if (bundleIndex['sound'])
-        				for (var i=0; i<bundleIndex.sound.length; i++) {
-        					requirements.push( "sound!" + name + '/' + bundleIndex.sound[i] );
-        				}
+					// Load resource
+					loaderInstance.load( url, function( data ) {
 
-        			// -------------------------
-        			// Scenes
-        			// -------------------------
+						// Keep object in bundle objects list
+						bundleObjects[alias] = data;
 
-        			// Load Scenes
-        			if (bundleIndex['scene'])
-        				for (var i=0; i<bundleIndex.scene.length; i++) {
-        					requirements.push( "scene!" + name + '/' + bundleIndex.scene[i] );
-        				}
+						// Expose object instance
 
-        			// -------------------------
-        			// Finally load other bundles
-        			// -------------------------
+						// Check if we are done
+						if (--pendingLoading <= 0)
+							finalizeLoading();
 
-        			// Load Bundles
-        			if (bundleIndex['bundle'])
-        				for (var i=0; i<bundleIndex.bundle.length; i++) {
-        					requirements.push( "bundle!" + bundleIndex.bundle[i] );
-        				}
+					});
+				}
 
-        			// Now that we have compiled the stack of dependencies,
-        			// place the request to load them, along with the bundle's entry point
-        			requirements.push( name + '/main' );
+				// Iterate over the loader classes
+				for (var loaderClass in index.load) {
+					if (!index.load.hasOwnProperty(loaderClass)) continue;
 
-        			// Load the rest
-        			req( requirements, 
+					//
+					// Callback to continue loading when we have the loader
+					// loaded and instantiated
+					//
+					var continueLoading = function( loaderInstance ) {
+						for (var alias in index.load[loaderClass]) {
+							if (!index.load[loaderClass].hasOwnProperty(alias)) continue;
+							// Load individual resource
+							loadResource( replaceMacros( index.load[loaderClass][alias] ), 
+										  alias, loaderInstance );
+						}
+					};
 
-                        //
-                        // Callback fired when all dependencies are resolved
-                        // 
-                        function(/* Variable args */) {
+					// Lookup loader class details
+					var parts = loaderClass.split("."),
+						classNamespace = parts[0], className = parts[1];
 
-            				// Get the reference to the last argument, which is the
-            				// bundle's entry point;
-            				var bundleMain = arguments[arguments.length-1];
+					// Handle THREE namespace
+					if (classNamespace == "THREE") {
+						if (THREE[className] !== undefined) {
+							// If we already have this loader loaded, fire continue immediately
+							continueLoading( getLoaderSingleton( className, THREE[className] ) );
+						} else {
+							// Otherwise load this THREE loader from our extras
+							req(['three-bundles/extras/loaders/THREE/' + className ], 
+								function() {
+									continueLoading( getLoaderSingleton( className, THREE[className] ) );
+								},
+								function(error) {
+									onload.error("Unable to load THREE loader class", className,":", error);
+								}
+							);
+						}
+					} else {
+						// That's an unknown namespace
+						onload.error("Unknown loader namespace", classNamespace);
+					}
+				}
 
-                            // Update bundle's resources table
-                            bundleMain.RESOURCES = { };
-                            for (var i=0; i<requirements.length-1; i++) {
-                                var parts = requirements[i].split("!"),
-                                    rType = parts[0],
-                                    rName = parts[1].substr(name.length+1);
+			});
 
-                                // Set to resources table
-                                if (!bundleMain.RESOURCES[rType]) bundleMain.RESOURCES[rType] = {};
-                                setByPath(bundleMain.RESOURCES[rType], rName, arguments[i]);
-                            }
-
-            				// We are now loaded
-            				onload(bundleMain);
-                        },
-
-                        //
-                        // A loading error occured, pass the
-                        // error right through.
-                        //
-                        function(error) {
-                            onload.error(error);
-                        }
-
-                   );
-
-        		},
-
-        		// A loading error occured, pass the
-        		// error right through.
-        		function(error) {
-        			onload.error(error);
-        		}
-        	);
-
-        }
-    };
+		}
+	};
 
 });

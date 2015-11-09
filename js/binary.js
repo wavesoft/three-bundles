@@ -22,7 +22,7 @@
 define(["three", "./extras/helpers/MD2Character"], function(THREE) {
 
 	// Protocol revision
-	var REV = 1;
+	var REV = 2;
 
 	/**
 	 * Factories for different entity types
@@ -327,7 +327,7 @@ define(["three", "./extras/helpers/MD2Character"], function(THREE) {
 	/**
 	 * Compactable entities
 	 *
-	 * The first 32 entities occupy 1 byte less, therefore for optimisation
+	 * The first 16 entities occupy 1 byte less, therefore for optimisation
 	 * purposes try to move the most frequently used entities to the top.
 	 */
 	var ENTITIES = [
@@ -344,6 +344,10 @@ define(["three", "./extras/helpers/MD2Character"], function(THREE) {
 		[THREE.Sphere, 									FACTORY.Default, 				INIT.Default ],
 		[THREE.Matrix3, 								FACTORY.Default, 				INIT.Default ],
 		[THREE.Matrix4, 								FACTORY.Default, 				INIT.Default ],
+		[THREE.BufferAttribute, 						FACTORY.Default, 				INIT.Default ],
+		[], // Reserved
+		[], // Reserved
+		[], // Reserved
 
 		[THREE.AnimationClip, 							FACTORY.Unconstructed,			INIT.AnimationClip ],
 		[THREE.VectorKeyframeTrack, 					FACTORY.Unconstructed,			INIT.KeyframeTrack ],
@@ -351,8 +355,6 @@ define(["three", "./extras/helpers/MD2Character"], function(THREE) {
 		[THREE.NumberKeyframeTrack, 					FACTORY.Unconstructed,			INIT.KeyframeTrack ],
 		[THREE.BooleanKeyframeTrack, 					FACTORY.Unconstructed,			INIT.KeyframeTrack ],
 		[THREE.StringKeyframeTrack, 					FACTORY.Unconstructed,			INIT.KeyframeTrack ],
-
-		[THREE.BufferAttribute, 						FACTORY.Default, 				INIT.Default ],
 
 		[THREE.BoxGeometry, 							FACTORY.Unconstructed,			INIT.WidthHeightDepth ],
 		[THREE.CircleBufferGeometry, 					FACTORY.Unconstructed,			INIT.RadiusSegmentsTheta ],
@@ -453,6 +455,9 @@ define(["three", "./extras/helpers/MD2Character"], function(THREE) {
 
 	/**
 	 * Property index for every entity type
+	 *
+	 * HINT: For optimal compression, bulk as many as possible numerical parameters close
+	 *       to each other. Continous numbers are be easily optimised.
 	 */
 	var PROPERTIES = [
 
@@ -480,6 +485,14 @@ define(["three", "./extras/helpers/MD2Character"], function(THREE) {
 		[ 'elements' ],
 		// THREE.Matrix4
 		[ 'elements' ],
+		// THREE.BufferAttribute
+		[ 'array', 'itemSize', 'dynamic', 'updateRange' ],
+		// Reserved
+		[],
+		// Reserved
+		[],
+		// Reserved
+		[],
 
 		// THREE.AnimationClip
 		[ 'name', 'duration', 'tracks', 'results' ],
@@ -493,9 +506,6 @@ define(["three", "./extras/helpers/MD2Character"], function(THREE) {
 		PROPERTYSET.KeyframeTrack,
 		// THREE.StringKeyframeTrack
 		PROPERTYSET.KeyframeTrack,
-
-		// THREE.BufferAttribute
-		[ 'array', 'itemSize', 'dynamic', 'updateRange' ],
 
 		// THREE.BoxGeometry
 		[ 'parameters' ],
@@ -670,34 +680,28 @@ define(["three", "./extras/helpers/MD2Character"], function(THREE) {
 	 * Protocol opcodes
 	 */
 	var OP = {
-		EXTENDED: 		0xFF,	// An extended opcode
-		DICT: 			0xFE,	// A dictionary of primitives
-		EXPORT: 		0xFC,	// Tag the next primitive as a named  bundle object
-		IMPORT: 	 	0xFD,	// Refer to another named primitive (in this or other bundles)
-		UNDEFINED: 	 	0xF8,	// Undefined primitive
-		NULL: 		 	0xF9,	// NULL Primitive
-		FALSE: 		 	0xFA,	// False primitive
-		TRUE: 		 	0xFB,	// True primitive
-		PAD_ALIGN: 	 	0xF0,	// Padding characters for alignment
-		STRING_8: 	 	0xE0,	// A string with 8-bit index
-		STRING_16: 	 	0xE1,	// A string with 16-bit index
-		STRING_32: 	 	0xE2,	// A string with 32-bit index
-		ARRAY_X_8:	 	0xE3,	// An element array with 8-bit index
-		ARRAY_X_16:	 	0xE4,	// An element array with 16-bit index
-		ARRAY_X_32:	 	0xE5,	// An element array with 32-bit index
-		ARRAY_EMPTY: 	0xE6, 	// An empty array
-		REF_24: 	 	0xE7, 	// A reference to a previous entity
-		STRING_3:	 	0xE8,	// A string with 4-bit embedded index
-		NUMBER_1: 	 	0xC0,	// A single number
-		ARRAY_8: 	 	0xC8,	// A numeric array with 8-bit index
-		ARRAY_16: 	 	0xD0,	// A numeric array with 16-bit index
-		ARRAY_32: 	 	0xD8,	// A numeric array with 32-bit index
-		ENTITY_5: 	 	0x80,	// An entity with 5-bit embedded eid
-		ENTITY_13: 	 	0xA0,	// An entity with 13-bit eid
-		NUMBER_N: 	 	0x00, 	// Consecutive, up to 16 numbers of same type
-		DIFF_ARRAY_8: 	0x20,	// Difference-Encoded TypedArray (8-bit length)
-		DIFF_ARRAY_16: 	0x40,	// Difference-Encoded TypedArray (16-bit length)
-		DIFF_ARRAY_32: 	0x60,	// Difference-Encoded TypedArray (32-bit length)
+		EXTENDED: 		0xFF, 	// Extended opcode (Future use)
+		DICT: 			0xFE, 	// Begin a DICT primitive (untyped js object)
+		EXPORT: 		0xFC, 	// Tag the next primitive as a named export
+		IMPORT: 		0xFD, 	// Refer to the primitive with the specified name
+		UNDEFINED: 		0xF8, 	// An UNDEFINED primitive
+		NULL: 			0xF9, 	// A NULL primitive
+		FALSE: 			0xFA, 	// A boolean FALSE primitive
+		TRUE: 			0xFB, 	// A boolean TRUE primitive
+		PAD_ALIGN: 		0xF0, 	// Bit-alignment padding (used before typed arrays)
+		STRING: 		0xE0, 	// A length-prefixed string (8-32 bit length)
+		ARRAY_EMPTY: 	0xE3, 	// An empty array
+		ARRAY_ANY: 		0xE8, 	// An array of primitives (8-32 bit length)
+		REF_24: 		0xE7, 	// A reference to a local entity (24-bit lookup index)
+		NUMBER_N: 		0xE8, 	// Continuous N number primitives
+		ENTITY_4: 		0xC0, 	// Begin an entity (4-bit ID)
+		ENTITY_12: 		0xD0, 	// Begin an entity (12-bit ID)
+		NUMBER_1: 		0x98, 	// A single number of specified type
+		ARRAY_ZERO: 	0xB8,	// A TypedArray only with zeros (faster than ARRAY_REP)
+		ARRAY_NUM: 		0x80, 	// A TypedArray of numbers (8-32 bit length)
+		ARRAY_REP: 		0xA0, 	// An array of repeated values (8-32 bit length)
+		ARRAY_DWS: 		0x00, 	// A downscaled TypedArray of numbers (8-32 bit length)
+		ARRAY_DIFF: 	0x40, 	// A Difference-Encoded TypedArray of numbers (8-32 bit length)
 	}
 
 	/**
@@ -710,8 +714,9 @@ define(["three", "./extras/helpers/MD2Character"], function(THREE) {
 		FLOAT32 : 0x06,		FLOAT64 : 0x07, // Float of 32 and 64 bit
 
 		DIFF8 	: 0x00,		DIFF16	: 0x01, // Difference encoding
+		SAME 	: 0x20,						// All array values have the same type
 
-		INT24   : 0xF0,		UINT24  : 0xF1, // Integers 24-bit (internal use)
+		INT24   : 0x40,		UINT24  : 0x80, // Integers 24-bit (internal use)
 	};
 
 	/**
@@ -905,33 +910,89 @@ define(["three", "./extras/helpers/MD2Character"], function(THREE) {
 
 				}
 
-				function getNumberArray( length, type ) {
+				function getNumberArray( length, type, encoded_as ) {
 					var ofs = offset;
-					if (type == NUMTYPE.INT8) {
-						offset += length;
-						return new Int8Array( buffer, ofs, length );
-					} else if (type == NUMTYPE.UINT8) {
-						offset += length;
-						return new Uint8Array( buffer, ofs, length );
-					} else if (type == NUMTYPE.INT16) {
-						offset += length * 2;
-						return new Int16Array( buffer, ofs, length );
-					} else if (type == NUMTYPE.UINT16) {
-						offset += length * 2;
-						return new Uint16Array( buffer, ofs, length );
-					} else if (type == NUMTYPE.INT32) {
-						offset += length * 4;
-						return new Int32Array( buffer, ofs, length );
-					} else if (type == NUMTYPE.UINT32) {
-						offset += length * 4;
-						return new Uint32Array( buffer, ofs, length );
-					} else if (type == NUMTYPE.FLOAT32) {
-						offset += length * 4;
-						return new Float32Array( buffer, ofs, length );
-					} else if (type == NUMTYPE.FLOAT64) {
-						offset += length * 8;
-						return new Float64Array( buffer, ofs, length );
+					if (type == encoded_as) {
+
+						// Case were we don't need type conversion
+						if (type == NUMTYPE.INT8) {
+							offset += length;
+							return new Int8Array( buffer, ofs, length );
+						} else if (type == NUMTYPE.UINT8) {
+							offset += length;
+							return new Uint8Array( buffer, ofs, length );
+						} else if (type == NUMTYPE.INT16) {
+							offset += length * 2;
+							return new Int16Array( buffer, ofs, length );
+						} else if (type == NUMTYPE.UINT16) {
+							offset += length * 2;
+							return new Uint16Array( buffer, ofs, length );
+						} else if (type == NUMTYPE.INT32) {
+							offset += length * 4;
+							return new Int32Array( buffer, ofs, length );
+						} else if (type == NUMTYPE.UINT32) {
+							offset += length * 4;
+							return new Uint32Array( buffer, ofs, length );
+						} else if (type == NUMTYPE.FLOAT32) {
+							offset += length * 4;
+							return new Float32Array( buffer, ofs, length );
+						} else if (type == NUMTYPE.FLOAT64) {
+							offset += length * 8;
+							return new Float64Array( buffer, ofs, length );
+						}
+
+					} else {
+
+						// Case were we DO need type conversion
+						var input;
+						if (encoded_as == NUMTYPE.INT8) {
+							offset += length;
+							input = new Int8Array( buffer, ofs, length );
+						} else if (encoded_as == NUMTYPE.UINT8) {
+							offset += length;
+							input = new Uint8Array( buffer, ofs, length );
+						} else if (encoded_as == NUMTYPE.INT16) {
+							offset += length * 2;
+							input = new Int16Array( buffer, ofs, length );
+						} else if (encoded_as == NUMTYPE.UINT16) {
+							offset += length * 2;
+							input = new Uint16Array( buffer, ofs, length );
+						} else if (encoded_as == NUMTYPE.INT32) {
+							offset += length * 4;
+							input = new Int32Array( buffer, ofs, length );
+						} else if (encoded_as == NUMTYPE.UINT32) {
+							offset += length * 4;
+							input = new Uint32Array( buffer, ofs, length );
+						} else if (encoded_as == NUMTYPE.FLOAT32) {
+							offset += length * 4;
+							input = new Float32Array( buffer, ofs, length );
+						} else if (encoded_as == NUMTYPE.FLOAT64) {
+							offset += length * 8;
+							input = new Float64Array( buffer, ofs, length );
+						}
+						// Create output
+						var output;
+						if (type == NUMTYPE.INT8) {
+							output = new Int8Array( length );
+						} else if (type == NUMTYPE.UINT8) {
+							output = new Uint8Array( length );
+						} else if (type == NUMTYPE.INT16) {
+							output = new Int16Array( length );
+						} else if (type == NUMTYPE.UINT16) {
+							output = new Uint16Array( length );
+						} else if (type == NUMTYPE.INT32) {
+							output = new Int32Array( length );
+						} else if (type == NUMTYPE.UINT32) {
+							output = new Uint32Array( length );
+						} else if (type == NUMTYPE.FLOAT32) {
+							output = new Float32Array( length );
+						} else if (type == NUMTYPE.FLOAT64) {
+							output = new Float64Array( length );
+						}
+						// Convert
+						for (var i=0;i<length;i++) output[i] = input[i];
 					}
+
 				}
 
 				function getEntity( eid ) {
@@ -1108,48 +1169,33 @@ define(["three", "./extras/helpers/MD2Character"], function(THREE) {
 
 						default:
 
-							var b20 = (op & 0x7),		// Bits 3:0
-								b40 = (op & 0x1F), 		// Bits 4:0
-								b43 = (op & 0x18) >> 3; // Bits 4:3
+							var b20 = (op & 0x7),		// Bits 2:0
+								b30 = (op & 0x1F), 		// Bits 3:0
+								b43 = (op & 0x18) >> 3, // Bits 4:3
+								b53 = (op & 0x38) >> 3; // Bits 5:3
 
-							if ((op & 0xF8) == 0xE8) { /* STRING_3 */
-								result = getString( b20 );
+							if ((op & 0xC0) == 0x00) { /* TYPED_ARRAY_16 */
+								result = getNumberArray( dataview.getUint32( (offset+=4)-4, true ), b20, b53 );
 								break;
 
-							} else if ((op & 0xF8) == 0xC0) { /* NUMBER_1 */
-								result = getNum( b20 );
+							} else if ((op & 0xC0) == 0x40) { /* TYPED_ARRAY_32 */
+								result = getNumberArray( dataview.getUint16( (offset+=4)-4, true ), b20, b53 );
 								break;
 
-							} else if ((op & 0xF8) == 0xC8) { /* ARRAY_8 */
-								result = getNumberArray( viewUint8[offset++], b20 );
-								break;
-
-							} else if ((op & 0xF8) == 0xD0) { /* ARRAY_16 */
-								result = getNumberArray( dataview.getUint16( (offset+=2)-2, true ), b20 );
-								break;
-
-							} else if ((op & 0xF8) == 0xD8) { /* ARRAY_32 */
-								result = getNumberArray( dataview.getUint32( (offset+=4)-4, true ), b20 );
-								break;
-
-							} else if ((op & 0xE0) == 0x20) { /* DIFF_ARRAY_8 */
-								result = getDiffEncodedArray( viewUint8[offset++], b20, b43 );
-								break;
-
-							} else if ((op & 0xE0) == 0x40) { /* DIFF_ARRAY_16 */
+							} else if ((op & 0xE0) == 0x80) { /* DIFF_ARRAY_16 */
 								result = getDiffEncodedArray( dataview.getUint16( (offset+=2)-2, true ), b20, b43 );
 								break;
 
-							} else if ((op & 0xE0) == 0x60) { /* DIFF_ARRAY_32 */
+							} else if ((op & 0xE0) == 0x90) { /* DIFF_ARRAY_32 */
 								result = getDiffEncodedArray( dataview.getUint32( (offset+=4)-4, true ), b20, b43 );
 								break;
 
-							} else if ((op & 0xE0) == 0x80) { /* ENTITY_5 */
-								result = getEntity( b40 );
+							} else if ((op & 0xF0) == 0xD0) { /* ENTITY_4 */
+								result = getEntity( b30 );
 								break;
 
-							} else if ((op & 0xE0) == 0xA0) { /* ENTITY_13 */
-								result = getEntity( (b40 << 8) + viewUint8[offset++] );
+							} else if ((op & 0xF0) == 0xC0) { /* ENTITY_12 */
+								result = getEntity( (b30 << 8) + viewUint8[offset++] );
 								break;
 
 							} else if ((op & 0xF8) == 0x00) { /* NUMBER_N */

@@ -1,14 +1,16 @@
+"use strict";
 var colors = require("colors"), hideWarn = false;
 console.warn = function() { if (hideWarn) return; console.log.apply(console, ["WARN:".yellow].concat(Array.prototype.slice.call(arguments)) ); };
 console.error = function() { console.log.apply(console, ["ERROR:".red].concat(Array.prototype.slice.call(arguments)) ); };
 console.info = function() { console.log.apply(console, ["INFO:".green].concat(Array.prototype.slice.call(arguments)) ); };
 
 // Validate command-line
-opt = require('node-getopt').create([
+var opt = require('node-getopt').create([
   ['m' , 'materials=BUNDLE'    , 'Separate materials in a different bundle'],
   ['g' , 'geometries=BUNDLE'   , 'Separate geometries in a different bundle'],
   ['t' , 'textures=BUNDLE'     , 'Separate textures in a different bundle'],
   ['o' , 'out=BUNDLE'	  	   , 'Specify the name of the bundle'],
+  ['O' , 'optimise=LEVEL+'     , 'Specify optimisation level'],
   ['b' , 'bundle-dir=DIR'  	   , 'Specify bundle base directory'],
   ['L' , 'load=BUNDLE+'  	   , 'Load the specified bundle before compiling'],
   ['h' , 'help'                , 'Display this help'],
@@ -20,6 +22,19 @@ opt = require('node-getopt').create([
   "\n" +
   "[[OPTIONS]]\n" +
   "\n" +
+  "Optimisation options:" +
+  "\n" +
+  "  -O0                      Disable all optimisations (Safest)\n" +
+  "                            - Perserve TypedArrays as-is\n" +
+  "  -O1                      Very safe optimisations\n" +
+  "                            - ByRef De-Duplication\n" +
+  "                            - Compact consecutive opcodes\n" +
+  "  -O2                      Safe optimisations (Default)\n" +
+  "                            - ByVal De-Duplication\n" +
+  "                            - Integer differential encoding\n" +
+  "  -O3                      Unsafe optimisations (Smallest)\n" +
+  "                            - Float differential encoding\n" +
+  "\n" +
   "Installation: npm install three-bundles\n" +
   "Respository:  https://github.com/wavesoft/three-bundles"
 )
@@ -27,7 +42,7 @@ opt = require('node-getopt').create([
 .parseSystem(); // parse command line
 
 // Validate arguments
-if (opt.argv.length < 2) {
+if (opt.argv.length < 1) {
 	console.error("Please specify at least one or module to compile!");
 	process.exit(1);
 }
@@ -84,6 +99,46 @@ hideWarn = true;
 requirejs(["require", "three", "js/binary_encoder", "three-bundles"], function(require, THREE, BinaryEncoder, ThreeBundles) {
 	hideWarn = false;
 
+	// Apply optimisation flags to encode
+	var applyFlags = function(encoder) {
+			var level = 2;
+			if (opt.options['optimise'] !== undefined)
+				level = parseInt(opt.options['optimise']);
+
+			// Handle errors
+			if (level > 3) {
+				console.error("Unknown optimisation level", level,"specified. Using 2 instead");
+				level = 2;
+			}
+
+			// Apply optimisation flags
+			if (level == 0) {
+				console.info("Disabling optimisations [-O0]");
+				encoder.useCrossRef = 0;
+				encoder.useCompact = false;
+				encoder.usePerservingOfTypes = true;
+				encoder.useDiffEnc = 0;
+			} else if (level == 1) {
+				console.info("Using safe optimisations [-O1]");
+				encoder.useCrossRef = 1;
+				encoder.useCompact = true;
+				encoder.usePerservingOfTypes = false;
+				encoder.useDiffEnc = 0;
+			} else if (level == 2) {
+				console.info("Using default optimisations [-O2]");
+				encoder.useCrossRef = 2;
+				encoder.useCompact = true;
+				encoder.usePerservingOfTypes = false;
+				encoder.useDiffEnc = 1;
+			} else if (level == 3) {
+				console.info("Using full optimisations [-O3]");
+				encoder.useCrossRef = 2;
+				encoder.useCompact = true;
+				encoder.usePerservingOfTypes = false;
+				encoder.useDiffEnc = 2;
+			}
+		};
+
 	// Bundle writing sequence
 	var preloadCounter = 0,
 		currentObjectName = null,
@@ -98,6 +153,7 @@ requirejs(["require", "three", "js/binary_encoder", "three-bundles"], function(r
 			// Check if we have to separate textures
 			if (opt.options['textures']) {
 				var encoder = new BinaryEncoder( opt.options['textures'] );
+				applyFlags(encoder);
 				encoder.setDatabase( ThreeBundles.database );
 				for (var i=0; i<bundleTextures.length; i++) {
 					encoder.encode( bundleTextures[i][0], bundleTextures[i][1] );
@@ -111,6 +167,7 @@ requirejs(["require", "three", "js/binary_encoder", "three-bundles"], function(r
 			// Check if we have to separate materials
 			if (opt.options['materials']) {
 				var encoder = new BinaryEncoder( opt.options['materials'] );
+				applyFlags(encoder);
 				encoder.setDatabase( ThreeBundles.database );
 				for (var i=0; i<bundleMaterials.length; i++) {
 					encoder.encode( bundleMaterials[i][0], bundleMaterials[i][1] );
@@ -124,6 +181,7 @@ requirejs(["require", "three", "js/binary_encoder", "three-bundles"], function(r
 			// Check if we have to separate geometries
 			if (opt.options['geometries']) {
 				var encoder = new BinaryEncoder( opt.options['geometries'] );
+				applyFlags(encoder);
 				encoder.setDatabase( ThreeBundles.database );
 				for (var i=0; i<bundleGeometries.length; i++) {
 					encoder.encode( bundleGeometries[i][0], bundleGeometries[i][1] );
@@ -140,6 +198,7 @@ requirejs(["require", "three", "js/binary_encoder", "three-bundles"], function(r
 
 			// Encode everything else in the bundle
 			var encoder = new BinaryEncoder( opt.options['out'] );
+			applyFlags(encoder);
 			encoder.setDatabase( ThreeBundles.database );
 			for (var i=0; i<bundleObjects.length; i++) {
 				encoder.encode( bundleObjects[i][0], bundleObjects[i][1] );
@@ -287,7 +346,7 @@ requirejs(["require", "three", "js/binary_encoder", "three-bundles"], function(r
 	}
 
 	// Load bundles to process
-	for (var i=1; i<opt.argv.length; i++) {
+	for (var i=0; i<opt.argv.length; i++) {
 		bundlesToLoad.push( opt.argv[i] );
 	}
 

@@ -209,7 +209,7 @@ requirejs(["require", "three", "js/binary_encoder", "three-bundles"], function(r
 			encoder.close();
 
 			// Warn for compression
-			console.log("NOTE:".cyan, "It's a good idea to gz-compress the resulting bundles");
+			console.log("NOTE:".cyan, "We are relying on a gzip compression of the result!");
 
 		};
 

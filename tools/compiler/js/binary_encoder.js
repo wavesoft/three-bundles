@@ -275,10 +275,21 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 		 */
 		this.diffEncElmThreshold = 16;
 
+		/**
+		 * Enable entity property vectorisation on arrays
+		 *
+		 * When this is enabled and multiple entities of the same type are found in an 
+		 * array, the compiler will attempt to compact them by adding one entity prefix
+		 * and multiple arrays for their properties.
+		 *
+		 * @param {boolean}
+		 */
+		this.useEntityVectors = false;
+
 		// Debug logging flags
 		this.logWrite 		= false;
 		this.logPrimitive 	= false;
-		this.logArray 		= true;
+		this.logArray 		= false;
 		this.logRef 		= false;
 		this.logAlign 		= false;
 		this.logEntity		= false;
@@ -315,7 +326,9 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 
 		// Open write stream
 		console.log("INFO:".green, "Creating bundle", filename.cyan);
-		this.fd = fs.openSync( filename, 'w' ); 
+		this.fd = fs.openSync( filename, 'w' );
+		this.writeBuffer = [];
+		this.writeOffset = 0;
 
 		// Prepare metadata
 		var meta = metadata || { };
@@ -334,6 +347,8 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 	BinaryEncoder.prototype.close = function() {
 		// Write key index
 		this.writeKeyIndex();
+		// Flush
+		this.writeSync( true );
 		// Finalize stream
 		fs.closeSync( this.fd );
 	}
@@ -367,7 +382,8 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 	BinaryEncoder.prototype.writeUint8 = function( d ) {
 		if (this.logWrite) console.log("    #".blue+String(this.offset).blue.bold+":",d);
 		this.offset += 1;
-		fs.writeSync( this.fd, pack1b(d, false), 0, 1 );
+		this.writeBuffer.push( pack1b(d, false) );
+		this.writeSync();
 	}
 
 	/**
@@ -376,7 +392,8 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 	BinaryEncoder.prototype.writeInt8 = function( d ) {
 		if (this.logWrite) console.log("    #".blue+String(this.offset).blue.bold+":",d);
 		this.offset += 1;
-		fs.writeSync( this.fd, pack1b(d, true), 0, 1 );
+		this.writeBuffer.push( pack1b(d, true) );
+		this.writeSync();
 	}
 
 	/**
@@ -385,7 +402,8 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 	BinaryEncoder.prototype.writeUint16 = function( d ) {
 		if (this.logWrite) console.log("    #".blue+String(this.offset).blue.bold+":",d);
 		this.offset += 2;
-		fs.writeSync( this.fd, pack2b(d, false), 0, 2 );
+		this.writeBuffer.push( pack2b(d, false) );
+		this.writeSync();
 	}
 
 	/**
@@ -394,7 +412,8 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 	BinaryEncoder.prototype.writeInt16 = function( d ) {
 		if (this.logWrite) console.log("    #".blue+String(this.offset).blue.bold+":",d);
 		this.offset += 2;
-		fs.writeSync( this.fd, pack2b(d, true), 0, 2 );
+		this.writeBuffer.push( pack2b(d, true) );
+		this.writeSync();
 	}
 
 	/**
@@ -412,7 +431,8 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 	BinaryEncoder.prototype.writeUint32 = function( d ) {
 		if (this.logWrite) console.log("    #".blue+String(this.offset).blue.bold+":",d);
 		this.offset += 4;
-		fs.writeSync( this.fd, pack4b(d, false), 0, 4 );
+		this.writeBuffer.push( pack4b(d, false) );
+		this.writeSync();
 	}
 
 	/**
@@ -421,7 +441,8 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 	BinaryEncoder.prototype.writeInt32 = function( d ) {
 		if (this.logWrite) console.log("    #".blue+String(this.offset).blue.bold+":",d);
 		this.offset += 4;
-		fs.writeSync( this.fd, pack4b(d, true), 0, 4 );
+		this.writeBuffer.push( pack4b(d, true) );
+		this.writeSync();
 	}
 
 	/**
@@ -430,7 +451,8 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 	BinaryEncoder.prototype.writeFloat32 = function( d ) {
 		if (this.logWrite) console.log("    #".blue+String(this.offset).blue.bold+":",d);
 		this.offset += 4;
-		fs.writeSync( this.fd, pack4f(d), 0, 4 );
+		this.writeBuffer.push( pack4f(d) );
+		this.writeSync();
 	}
 
 	/**
@@ -439,7 +461,8 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 	BinaryEncoder.prototype.writeFloat64 = function( d ) {
 		if (this.logWrite) console.log("    #".blue+String(this.offset).blue.bold+":",d);
 		this.offset += 8;
-		fs.writeSync( this.fd, pack8f(d), 0, 8 );
+		this.writeBuffer.push( pack8f(d) );
+		this.writeSync();
 	}
 
 	/**
@@ -448,7 +471,26 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 	BinaryEncoder.prototype.writeString = function( d ) {
 		if (this.logWrite) console.log("    #".blue+String(this.offset).blue.bold+":",d);
 		this.offset += d.length;
-		fs.writeSync( this.fd, d );
+		this.writeBuffer.push( new Buffer(d) );
+		this.writeSync();
+	}
+
+	/**
+	 * Write buffer
+	 */
+	BinaryEncoder.prototype.writeSync = function( flush ) {
+
+		// Proceeed only with enough data
+		if ((this.offset - this.writeOffset < 8192) && !flush) return;
+	
+		// Concat buffers
+		var buf = Buffer.concat( this.writeBuffer );
+		this.writeBuffer = [];
+		this.writeOffset = this.offset;
+
+		// Write buffer
+		fs.writeSync( this.fd, buf, 0, buf.length );
+
 	}
 
 	////////////////////////////////////////////////////////////
@@ -505,7 +547,7 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 	/**
 	 * Write padding opcode accordin to type and index length
 	 */
-	BinaryEncoder.prototype.writeAlignFor = function( type, len ) {
+	BinaryEncoder.prototype.writeAlignFor = function( type, len, extra ) {
 		var sz=0, pad=0;
 
 		// Get type size
@@ -533,6 +575,9 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 			case LEN.U32:
 				pad=4; break;
 		}
+
+		// Extra padding
+		if (extra) pad+=extra;
 
 		// Write alignment pad
 		this.writeAlign( sz, pad );
@@ -941,36 +986,76 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 		}
 
 		// Prepare properties
-		var min = v[0], max = v[0], 			// Bounds
-			is_float = false, all_float = true, // Float extremes
-			same_val = v[0], all_same = true, 	// Same comparison
-			maxDiff = 0, prev = undefined;		// Differential encoding
+		var min = v[0], max = v[0], numerical = true,	// Bounds
+			is_float = false, all_float = true, 		// Float extremes
+			same_val = v[0], all_same = true, 			// Same comparison
+			maxDiff = 0, prev = undefined,				// Differential encoding
+			type_constr = undefined;					// Entity vectorisation
 
 		// Iterate over entities
 		for (var i=0; i<v.length; i++) {
 			var n = v[i], d=0;
-			// Make sure we have only numbers
-			if (typeof(n) !== "number") return undefined;
-			// Update bounds
-			if (n > max) max = n;
-			if (n < min) min = n;
-			// Check for float
-			if (n % 1 === 0) {
-				// Integer
-				if ((n != 0) && all_float) all_float=false;
+			// Process numbers with numerical principles
+			if (numerical) {
+				if (typeof(n) !== "number") {
+					if ((i == 0) && (this.useEntityVectors)) {
+						// We are not working with numbers, but we will check for vectorisation 
+						numerical = false;
+						// That's not possible when we have basic primitives
+						if ((n === null) || (n === undefined) || (n instanceof Array) || 
+							(n instanceof Uint8Array) || (n instanceof Int8Array) ||
+							(n instanceof Uint16Array) || (n instanceof Int16Array) ||
+							(n instanceof Uint32Array) || (n instanceof Int32Array) ||
+							(n instanceof Float32Array) || (n instanceof Float64Array) ||
+							(n.constructor === ({}).constructor) || (typeof n == "string")) {
+							return undefined;
+						}
+						// Keep type
+						type_constr = n.constructor;
+					} else {
+						// Mixed
+						return undefined;
+					}
+				} else {
+					// Update bounds
+					if (n > max) max = n;
+					if (n < min) min = n;
+					// Check for float
+					if (n % 1 === 0) {
+						// Integer
+						if ((n != 0) && all_float) all_float=false;
+					} else {
+						// Float
+						if (!is_float) is_float=true;
+					}
+					// Check if the entire array has the same value
+					if (all_same && (n != same_val)) all_same = false;
+					// Calculate maximum difference
+					if (prev == undefined) {
+						prev = n;
+					} else {
+						d = Math.abs(n - prev);
+						if (d > maxDiff) maxDiff = d;
+					}
+				}
 			} else {
-				// Float
-				if (!is_float) is_float=true;
+				// Check if we have many different types
+				if (!(n instanceof type_constr)) {
+					return undefined;
+				}
 			}
-			// Check if the entire array has the same value
-			if (all_same && (n != same_val)) all_same = false;
-			// Calculate maximum difference
-			if (prev == undefined) {
-				prev = n;
-			} else {
-				d = Math.abs(n - prev);
-				if (d > maxDiff) maxDiff = d;
-			}
+		}
+
+		// Check if we have vectorisation
+		if (!numerical) {
+			// console.log("VEC ".cyan+"@".blue+String(this.offset).bold.blue+", len="+v.length);
+			return {
+				'type': -1,
+				'op': OP.ENTITY_VECTOR,
+				'len': len,
+				'dt': 0,
+				'original': -1,
+			};
 		}
 
 		// If everything is same, check now
@@ -1440,7 +1525,7 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 	/**
 	 * Encode array of elements
 	 */
-	BinaryEncoder.prototype.writeEncodedArray = function( srcArray ) {
+	BinaryEncoder.prototype.writeEncodedArray = function( srcArray, writeLength ) {
 
 		// If array is empty, write empty array header
 		if (srcArray.length == 0) {
@@ -1449,6 +1534,9 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 			this.writeUint8( OP.ARRAY_EMPTY );
 			return;
 		}
+
+		// Default is to write length
+		if (writeLength === undefined) writeLength = true;
 
 		// Get array type
 		var arrayType = this.optimiseNumArray( srcArray ),
@@ -1461,15 +1549,15 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 			if (arrayLEN == LEN.U8) {
 				if (this.logArray) console.log(" [] ".cyan+"@".blue+String(this.offset).blue.bold+": x8, len=", srcArray.length,", peak=",srcArray[0]);
 				this.writeUint8( OP.ARRAY_ANY | arrayLEN );
-				this.writeUint16( srcArray.length );
+				if (writeLength) this.writeUint16( srcArray.length );
 			} else if (arrayLEN == LEN.U16) {
 				if (this.logArray) console.log(" [] ".cyan+"@".blue+String(this.offset).blue.bold+": x16, len=", srcArray.length,", peak=",srcArray[0]);
 				this.writeUint8( OP.ARRAY_ANY | arrayLEN );
-				this.writeUint16( srcArray.length );
+				if (writeLength) this.writeUint16( srcArray.length );
 			} else {
 				if (this.logArray) console.log(" [] ".cyan+"@".blue+String(this.offset).blue.bold+": x32, len=", srcArray.length,", peak=",srcArray[0]);
 				this.writeUint8( OP.ARRAY_ANY | arrayLEN );
-				this.writeUint16( srcArray.length );
+				if (writeLength) this.writeUint16( srcArray.length );
 			}
 
 			// Write primitives
@@ -1522,12 +1610,14 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 				this.writeUint8( OP.ARRAY_ZERO | arrayType.type );
 
 				// Write length according to size
-				if (arrayLEN == LEN.U8) {
-					this.writeUint8( srcArray.length );
-				} else if (arrayLEN == LEN.U16) {
-					this.writeUint16( srcArray.length );
-				} else {
-					this.writeUint32( srcArray.length );
+				if (writeLength) {
+					if (arrayLEN == LEN.U8) {
+						this.writeUint8( srcArray.length );
+					} else if (arrayLEN == LEN.U16) {
+						this.writeUint16( srcArray.length );
+					} else {
+						this.writeUint32( srcArray.length );
+					}
 				}
 
 			}
@@ -1542,12 +1632,14 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 				this.writeUint8( OP.ARRAY_REP | arrayType.type | (arrayLEN << 3) );
 
 				// Write length according to size
-				if (arrayLEN == LEN.U8) {
-					this.writeUint8( srcArray.length );
-				} else if (arrayLEN == LEN.U16) {
-					this.writeUint16( srcArray.length );
-				} else {
-					this.writeUint32( srcArray.length );
+				if (writeLength) {
+					if (arrayLEN == LEN.U8) {
+						this.writeUint8( srcArray.length );
+					} else if (arrayLEN == LEN.U16) {
+						this.writeUint16( srcArray.length );
+					} else {
+						this.writeUint32( srcArray.length );
+					}
 				}
 
 				// Write value
@@ -1561,19 +1653,25 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 			else if (arrayType.op == OP.ARRAY_NUM) {
 
 				// Write alignment header
-				this.writeAlignFor( arrayType.type, arrayLEN );
+				if (writeLength) {
+					this.writeAlignFor( arrayType.type, arrayLEN, 1 );
+				} else {
+					this.writeAlignFor( arrayType.type, LEN.U8 );
+				}
 
 				// Write repeat header
 				if (this.logArray) console.log(" [] ".cyan+"@".blue+String(this.offset).blue.bold+": typed, len=", srcArray.length,", type=", _TYPENAME[arrayType.type]);
 				this.writeUint8( OP.ARRAY_NUM | arrayType.type | (arrayLEN << 3) );
 
 				// Write length according to size
-				if (arrayLEN == LEN.U8) {
-					this.writeUint8( srcArray.length );
-				} else if (arrayLEN == LEN.U16) {
-					this.writeUint16( srcArray.length );
-				} else {
-					this.writeUint32( srcArray.length );
+				if (writeLength) {
+					if (arrayLEN == LEN.U8) {
+						this.writeUint8( srcArray.length );
+					} else if (arrayLEN == LEN.U16) {
+						this.writeUint16( srcArray.length );
+					} else {
+						this.writeUint32( srcArray.length );
+					}
 				}
 
 				// Write array
@@ -1587,19 +1685,25 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 			else if (arrayType.op == OP.ARRAY_DWS) {
 
 				// Write alignment header
-				this.writeAlignFor( arrayType.type, arrayLEN );
+				if (writeLength) {
+					this.writeAlignFor( arrayType.type, arrayLEN, 1 );
+				} else {
+					this.writeAlignFor( arrayType.type, LEN.U8 );
+				}
 
 				// Write repeat header
 				if (this.logArray) console.log("[v] ".cyan+"@".blue+String(this.offset).blue.bold+": downscaled, len=", srcArray.length,", from=",_TYPENAME[arrayType.original],", to=",_TYPENAME[arrayType.type]);
 				this.writeUint8( OP.ARRAY_NUM | arrayType.original | (arrayLEN << 3) | (arrayType.dt << 5) );
 
 				// Write length according to size
-				if (arrayLEN == LEN.U8) {
-					this.writeUint8( srcArray.length );
-				} else if (arrayLEN == LEN.U16) {
-					this.writeUint16( srcArray.length );
-				} else {
-					this.writeUint32( srcArray.length );
+				if (writeLength) {
+					if (arrayLEN == LEN.U8) {
+						this.writeUint8( srcArray.length );
+					} else if (arrayLEN == LEN.U16) {
+						this.writeUint16( srcArray.length );
+					} else {
+						this.writeUint32( srcArray.length );
+					}
 				}
 
 				// Write array
@@ -1613,11 +1717,59 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 			else if (arrayType.op == OP.ARRAY_DIFF) {
 
 				// Write alignment header
-				this.writeAlignFor( arrayType.type, arrayLEN );
+				if (writeLength) {
+					this.writeAlignFor( arrayType.type, arrayLEN, 1 );
+				} else {
+					this.writeAlignFor( arrayType.type, LEN.U8 );
+				}
 
 				// Write repeat header
 				if (this.logArray) console.log("[Δ] ".cyan+"@".blue+String(this.offset).blue.bold+": diffenc, len=", srcArray.length,", from=",_TYPENAME[arrayType.original],", to=",_TYPENAME[arrayType.type]);
 				this.writeUint8( OP.ARRAY_DIFF | arrayType.original | (arrayLEN << 3) | (arrayType.dt << 5) );
+
+				// Write length according to size
+				if (writeLength) {
+					if (arrayLEN == LEN.U8) {
+						this.writeUint8( srcArray.length );
+					} else if (arrayLEN == LEN.U16) {
+						this.writeUint16( srcArray.length );
+					} else {
+						this.writeUint32( srcArray.length );
+					}
+				}
+
+				// Write array with differential encoding
+				this.writeDiffEncNum( srcArray, arrayType.original, arrayType.dt );
+
+			}
+
+			//
+			// [5] Vector of entities
+			//
+			else if (arrayType.op == OP.ENTITY_VECTOR) {
+
+				// Write vector header
+				if (this.logArray) console.log("{V} ".cyan+"@".blue+String(this.offset).blue.bold+": vector, len=", srcArray.length);
+				this.writeUint8( OP.ENTITY_VECTOR | arrayLEN );
+
+				// Get the entity ID of this object
+				var eid = -1, object = srcArray[0];
+				for (var i=0; i<ENTITIES.length; i++)
+					if ((ENTITIES[i].length > 0) && (object instanceof ENTITIES[i][0]))
+						{ eid = i; break; }
+
+				// If no such entity exists, raise exception
+				if (eid < 0) {
+					console.log(object);
+					throw {
+						'name' 		: 'EncodingError',
+						'message'	: 'The specified object is not of known entity type',
+						toString 	: function(){return this.name + ": " + this.message;}
+					};
+				}
+
+				// Write entity ID
+				this.writeUint16( eid );
 
 				// Write length according to size
 				if (arrayLEN == LEN.U8) {
@@ -1628,8 +1780,14 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 					this.writeUint32( srcArray.length );
 				}
 
-				// Write array with differential encoding
-				this.writeDiffEncNum( srcArray, arrayType.original, arrayType.dt );
+				// Dump all consecutive property tables
+				for (var j=0; j<srcArray.length; j++) {
+					var propertyTable = new Array( PROPERTIES[eid].length );
+					for (var i=0; i<PROPERTIES[eid].length; i++) {
+						propertyTable[i] = object[ PROPERTIES[eid][i] ];
+					}
+					this.writeEncodedArray( propertyTable, false );
+				}
 
 			}
 
@@ -1739,7 +1897,7 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 
 		// Write down property table
 		if (this.logEntity) console.log("ENT ".cyan+"@".blue+String(this.offset).blue.bold,": eid=" + eid);
-		this.writeEncodedArray( propertyTable );
+		this.writeEncodedArray( propertyTable, false );
 
 	}
 
@@ -1777,7 +1935,6 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 		this.writePrimitive( object, name );
 
 	}
-
 
 	/**
 	 * Return binary encoder

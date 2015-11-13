@@ -712,11 +712,15 @@ define(["three", "./extras/helpers/MD2Character"], function(THREE) {
 		INT16 	: 0x02,		UINT16 	: 0x03, // Integers 16-bit
 		INT32   : 0x04,		UINT32  : 0x05, // Integers 32-bit
 		FLOAT32 : 0x06,		FLOAT64 : 0x07, // Float of 32 and 64 bit
+	};
 
-		DIFF8 	: 0x00,		DIFF16	: 0x01, // Difference encoding
-		SAME 	: 0x20,						// All array values have the same type
-
-		INT24   : 0x40,		UINT24  : 0x80, // Integers 24-bit (internal use)
+	/**
+	 * LEN constants
+	 */
+	var LEN = {
+		U8: 0,
+		U16: 1,
+		U32: 2
 	};
 
 	/**
@@ -740,6 +744,7 @@ define(["three", "./extras/helpers/MD2Character"], function(THREE) {
 	BinaryDecoder.ENTITIES = ENTITIES;
 	BinaryDecoder.PROPERTIES = PROPERTIES;
 	BinaryDecoder.NUMTYPE = NUMTYPE;
+	BinaryDecoder.LEN = LEN;
 
 	/**
 	 * Set an external database to use
@@ -832,7 +837,7 @@ define(["three", "./extras/helpers/MD2Character"], function(THREE) {
 					return array;
 				}
 
-				function getDiffEncodedArray( length, type, array_type ) {
+				function getDiffEncodedArray( length, type, dt ) {
 
 					// Allocate a data array and get first value according to type
 					var data, is_float = false;
@@ -881,12 +886,17 @@ define(["three", "./extras/helpers/MD2Character"], function(THREE) {
 
 					// Select input array
 					var input;
-					switch (array_type) {
-						case NUMTYPE.DIFF8:
-							input = viewInt8.slice(offset);
-							offset += (length - 1);
+					switch (dt) {
+						case 0:
+							if (type == NUMTYPE.FLOAT64) {
+								input = new Float32Array( buffer, offset )
+								offset += (length - 1) * 4;
+							} else {
+								input = viewInt8.slice(offset);
+								offset += (length - 1);
+							}
 							break;
-						case NUMTYPE.DIFF16:
+						case 1:
 							input = new Int16Array( buffer, offset )
 							offset += (length - 1) * 2;
 							break;
@@ -894,7 +904,7 @@ define(["three", "./extras/helpers/MD2Character"], function(THREE) {
 						default:
 							throw {
 								'name' 		: 'TypeError',
-								'message'	: 'The specified differential array type (#' + array_type + ') at offset '+offset+' is not known',
+								'message'	: 'The specified downscale type (#' + dt + ') at offset '+offset+' is not known',
 								toString 	: function(){return this.name + ": " + this.message;}
 							};
 					}
@@ -910,9 +920,36 @@ define(["three", "./extras/helpers/MD2Character"], function(THREE) {
 
 				}
 
+				function getFilledArray( length, type, value ) {
+					var result;
+					// Construct array
+					if (type == NUMTYPE.INT8) {
+						result = new Int8Array( length );
+					} else if (type == NUMTYPE.UINT8) {
+						result = new Uint8Array( length );
+					} else if (type == NUMTYPE.INT16) {
+						result = new Int16Array( length );
+					} else if (type == NUMTYPE.UINT16) {
+						result = new Uint16Array( length );
+					} else if (type == NUMTYPE.INT32) {
+						result = new Int32Array( length );
+					} else if (type == NUMTYPE.UINT32) {
+						result = new Uint32Array( length );
+					} else if (type == NUMTYPE.FLOAT32) {
+						result = new Float32Array( length );
+					} else if (type == NUMTYPE.FLOAT64) {
+						result = new Float64Array( length );
+					}
+					// Default to 0, otherwise fill
+					if (value !== undefined)
+						result.fill( value );
+					// Return result
+					return result;
+				}
+
 				function getNumberArray( length, type, encoded_as ) {
 					var ofs = offset;
-					if (type == encoded_as) {
+					if ((type == encoded_as) || (encoded_as === undefined)) {
 
 						// Case were we don't need type conversion
 						if (type == NUMTYPE.INT8) {
@@ -1022,6 +1059,33 @@ define(["three", "./extras/helpers/MD2Character"], function(THREE) {
 					return instance;
 				}
 
+				function applyDT( type, dt ) {
+					switch (type) {
+						case NUMTYPE.INT8:
+						case NUMTYPE.UINT8:
+							// No downscaling appliable
+							return type;
+
+						case NUMTYPE.INT16:
+						case NUMTYPE.UINT16:
+							// Downscale to 8-bit no matter what dt says
+							return type - 2;
+
+						case NUMTYPE.INT32:
+						case NUMTYPE.UINT32:
+							// Downscale to 16 or 8-bit
+							return (dt == 0) ? (type - 4) : (type - 2);
+
+						case NUMTYPE.FLOAT32:
+							// Downscale to INT8 or INT16
+							return (dt == 0) ? NUMTYPE.INT8 : NUMTYPE.INT16;
+
+						case NUMTYPE.FLOAT64:
+							// Downscale to INT16 or FLOAT32
+							return (dt == 0) ? NUMTYPE.FLOAT32 : NUMTYPE.INT16;
+					}
+				}
+
 				function getDict( size ) {
 					// Create a dict
 					var dict = { };
@@ -1034,11 +1098,23 @@ define(["three", "./extras/helpers/MD2Character"], function(THREE) {
 					return dict;
 				}
 
+				function getLen( len ) {
+					if (len == LEN.U8) {
+						return viewUint8[offset++];
+					} else if (len == LEN.U16) {
+						return dataview.getUint16( (offset+=2)-2, true );
+					} else if (len == LEN.U32) {
+						return dataview.getUint32( (offset+=4)-4, true );
+					}
+				}
+
 				function getPrimitive( valid_opcodes ) {
 
 					// If we have a compacted buffer, drain it
 					if (compactBuf.length > 0) 
 						return compactBuf.shift();
+
+					console.log("Prim at",offset);
 
 					// Get next opcode
 					var op = viewUint8[offset++];
@@ -1077,7 +1153,7 @@ define(["three", "./extras/helpers/MD2Character"], function(THREE) {
 					switch (op) {
 
 						// -----------------------
-						//  Native primitives
+						//  Single-byte options
 						// -----------------------
 
 						case OP.UNDEFINED:
@@ -1096,53 +1172,13 @@ define(["three", "./extras/helpers/MD2Character"], function(THREE) {
 							result = true;
 							break;
 
-						// -----------------------
-						//  Strings
-						// -----------------------
-
-						case OP.STRING_8:
-							result = getString( viewUint8[offset++] );
-							break;
-
-						case OP.STRING_16:
-							result = getString( dataview.getUint16( (offset+=2)-2, true ) );
-							break;
-
-						case OP.STRING_32:
-							result = getString( dataview.getUint32( (offset+=4)-4, true ) );
-							break;
-
-						// -----------------------
-						//  Arrays
-						// -----------------------
-
 						case OP.ARRAY_EMPTY:
 							result = [ ];
 							break;
 
-						case OP.ARRAY_X_8:
-							result = getArray( viewUint8[offset++] );
-							break;
-
-						case OP.ARRAY_X_16:
-							result = getArray( dataview.getUint16( (offset+=2)-2, true ) );
-							break;
-
-						case OP.ARRAY_X_32:
-							result = getArray( dataview.getUint32( (offset+=4)-4, true ) );
-							break;
-
-						// -----------------------
-						//  Dictionary
-						// -----------------------
-
 						case OP.DICT:
 							result = getDict( viewUint8[offset++] );
 							break;
-
-						// -----------------------
-						//  Cross-reference
-						// -----------------------
 
 						case OP.REF_24:
 							tmpHi = viewUint8[offset++] << 16;
@@ -1169,47 +1205,59 @@ define(["three", "./extras/helpers/MD2Character"], function(THREE) {
 
 						default:
 
-							var b20 = (op & 0x7),		// Bits 2:0
-								b30 = (op & 0x1F), 		// Bits 3:0
+							var b10 = (op & 0x03), 		// Bits 1:0
+								b20 = (op & 0x07),		// Bits 2:0
+								b30 = (op & 0x0F), 		// Bits 3:0
 								b43 = (op & 0x18) >> 3, // Bits 4:3
-								b53 = (op & 0x38) >> 3; // Bits 5:3
+								 b5 = (op & 0x20) >> 4, // Bit  5
+								len = 0;
 
-							if ((op & 0xC0) == 0x00) { /* TYPED_ARRAY_16 */
-								result = getNumberArray( dataview.getUint32( (offset+=4)-4, true ), b20, b53 );
+							if ((op & 0xFC) == 0xE0) { /* STRING */
+								result = getString( getLen( b10 ) );
 								break;
 
-							} else if ((op & 0xC0) == 0x40) { /* TYPED_ARRAY_32 */
-								result = getNumberArray( dataview.getUint16( (offset+=4)-4, true ), b20, b53 );
+							} else if ((op & 0xFC) == 0xE8) { /* ARRAY_PRIM */
+								result = getArray( getLen( b10 ) );
 								break;
 
-							} else if ((op & 0xE0) == 0x80) { /* DIFF_ARRAY_16 */
-								result = getDiffEncodedArray( dataview.getUint16( (offset+=2)-2, true ), b20, b43 );
-								break;
-
-							} else if ((op & 0xE0) == 0x90) { /* DIFF_ARRAY_32 */
-								result = getDiffEncodedArray( dataview.getUint32( (offset+=4)-4, true ), b20, b43 );
-								break;
-
-							} else if ((op & 0xF0) == 0xD0) { /* ENTITY_4 */
-								result = getEntity( b30 );
-								break;
-
-							} else if ((op & 0xF0) == 0xC0) { /* ENTITY_12 */
-								result = getEntity( (b30 << 8) + viewUint8[offset++] );
-								break;
-
-							} else if ((op & 0xF8) == 0x00) { /* NUMBER_N */
-
+							} else if ((op & 0xF8) == 0xE8) { /* NUMBER_N */
 								// Get length
-								var len = viewUint8[offset++];
-
+								len = viewUint8[offset++];
 								// Populate compact num buffer
 								compactBuf = [];
 								for (var i=0; i<len; i++)
 									compactBuf.push( getNum( b20 ) );
-
 								// Pop firt
 								result = compactBuf.shift();
+								break;
+
+							} else if ((op & 0xF0) == 0xC0) { /* ENTITY_4 */
+								result = getEntity( b30 );
+								break;
+
+							} else if ((op & 0xF0) == 0xD0) { /* ENTITY_12 */
+								result = getEntity( (b30 << 8) | viewUint8[offset++] );
+								break;
+
+							} else if ((op & 0xF8) == 0x98) { /* NUMBER_1 (Priority over ARRAY_NUM) */
+								result = getNum( b20 );
+								break;
+
+							} else if ((op & 0xE0) == 0x80) { /* ARRAY_NUM */
+								result = getNumberArray( getLen( b43 ), b30 );
+								break;
+
+							} else if ((op & 0xE0) == 0xA0) { /* ARRAY_REP */
+								len = getLen( b43 );
+								result = getFilledArray( len, b30, getNum(b30) );
+								break;
+
+							} else if ((op & 0xC0) == 0x00) { /* ARRAY_DWS */
+								result = getNumberArray( getLen( b43 ), b30, applyDT( b30, b5) );
+								break;
+
+							} else if ((op & 0xC0) == 0x40) { /* ARRAY_DIFF */
+								result = getDiffEncodedArray( getLen(b43), b30, b5 );
 								break;
 
 							} else {

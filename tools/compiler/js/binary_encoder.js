@@ -94,16 +94,18 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 		PROPERTIES = Binary.PROPERTIES,
 		NUMTYPE = Binary.NUMTYPE,
 		REV = Binary.REV,
-		OP = Binary.OP;
+		OP = Binary.OP,
+		LEN = Binary.LEN;
 
 	/**
-	 * LEN constants
+	 * Add some custom NUMTYPES
 	 */
-	var LEN = {
-		U8: 0,
-		U16: 1,
-		U32: 2
-	};
+	NUMTYPE.UNKNOWN = 0xff;
+	var DT = {
+		DOWN_16: 1,
+		DOWN_8: 0,
+		NONE: 2,
+	}
 
 	/**
 	 * THREE.js will create an <img /> element when loading textures, 
@@ -286,6 +288,17 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 		 */
 		this.useEntityVectors = false;
 
+		/**
+		 * Validate the integrity of the numerical types written
+		 *
+		 * This is mostly used for debugging and it will only slow down your
+		 * code. Enable this only if you want to debug the writeXXXX functions,
+		 * when passing invalid arguments
+		 *
+		 * @param {boolean}
+		 */
+		this.validateWriteNumbers = false;
+
 		// Debug logging flags
 		this.logWrite 		= false;
 		this.logPrimitive 	= false;
@@ -380,47 +393,95 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 	 * Write an unsigned byte (used for opcodes)
 	 */
 	BinaryEncoder.prototype.writeUint8 = function( d ) {
-		if (this.logWrite) console.log("    #".blue+String(this.offset).blue.bold+":",d);
+		if (this.logWrite) console.log("    #".blue+String(this.offset).blue.bold+": U8=",d);
+		if (this.validateWriteNumbers) {
+			if (d < 0) throw {
+				'name' 		: 'RangeError',
+				'message'	: 'Trying to write number < 0 as UINT8',
+				toString 	: function(){return this.name + ": " + this.message;}
+			};
+			else if (d > 255) throw {
+				'name' 		: 'RangeError',
+				'message'	: 'Trying to write number > 255 as UINT8',
+				toString 	: function(){return this.name + ": " + this.message;}
+			};
+		}
 		this.offset += 1;
 		this.writeBuffer.push( pack1b(d, false) );
-		this.writeSync();
+		this.writeSync( false );
 	}
 
 	/**
 	 * Write a signed byte (used for small values)
 	 */
 	BinaryEncoder.prototype.writeInt8 = function( d ) {
-		if (this.logWrite) console.log("    #".blue+String(this.offset).blue.bold+":",d);
+		if (this.logWrite) console.log("    #".blue+String(this.offset).blue.bold+": I8=",d);
+		if (this.validateWriteNumbers) {
+			if (d < -128) throw {
+				'name' 		: 'RangeError',
+				'message'	: 'Trying to write number < -128 as INT8',
+				toString 	: function(){return this.name + ": " + this.message;}
+			};
+			else if (d > 127) throw {
+				'name' 		: 'RangeError',
+				'message'	: 'Trying to write number > 127 as INT8',
+				toString 	: function(){return this.name + ": " + this.message;}
+			};
+		}
 		this.offset += 1;
 		this.writeBuffer.push( pack1b(d, true) );
-		this.writeSync();
+		this.writeSync( false );
 	}
 
 	/**
 	 * Write a 16-bit unsigned number
 	 */
 	BinaryEncoder.prototype.writeUint16 = function( d ) {
-		if (this.logWrite) console.log("    #".blue+String(this.offset).blue.bold+":",d);
+		if (this.logWrite) console.log("    #".blue+String(this.offset).blue.bold+": U16=",d);
+		if (this.validateWriteNumbers) {
+			if (d < 0) throw {
+				'name' 		: 'RangeError',
+				'message'	: 'Trying to write number < 0 as UINT16',
+				toString 	: function(){return this.name + ": " + this.message;}
+			};
+			else if (d > 65535) throw {
+				'name' 		: 'RangeError',
+				'message'	: 'Trying to write number > 65535 as UINT16',
+				toString 	: function(){return this.name + ": " + this.message;}
+			};
+		}
 		this.offset += 2;
 		this.writeBuffer.push( pack2b(d, false) );
-		this.writeSync();
+		this.writeSync( false );
 	}
 
 	/**
 	 * Write a 16-bit number
 	 */
 	BinaryEncoder.prototype.writeInt16 = function( d ) {
-		if (this.logWrite) console.log("    #".blue+String(this.offset).blue.bold+":",d);
+		if (this.logWrite) console.log("    #".blue+String(this.offset).blue.bold+": I16=",d);
+		if (this.validateWriteNumbers) {
+			if (d < -32768) throw {
+				'name' 		: 'RangeError',
+				'message'	: 'Trying to write number < -32768 as INT16',
+				toString 	: function(){return this.name + ": " + this.message;}
+			};
+			else if (d > 32767) throw {
+				'name' 		: 'RangeError',
+				'message'	: 'Trying to write number > 32767 as INT16',
+				toString 	: function(){return this.name + ": " + this.message;}
+			};
+		}
 		this.offset += 2;
 		this.writeBuffer.push( pack2b(d, true) );
-		this.writeSync();
+		this.writeSync( false );
 	}
 
 	/**
 	 * Write a 24-bit unsigned number
 	 */
 	BinaryEncoder.prototype.writeUint24 = function( d ) {
-		if (this.logWrite) console.log("    #".blue+String(this.offset).blue.bold+":",d);
+		if (this.logWrite) console.log("    #".blue+String(this.offset).blue.bold+": U24=",d);
 		this.writeUint8((d & 0xff0000) >> 16);
 		this.writeUint16(d & 0xffff);
 	}
@@ -429,68 +490,100 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 	 * Write a 32-bit unsigned number
 	 */
 	BinaryEncoder.prototype.writeUint32 = function( d ) {
-		if (this.logWrite) console.log("    #".blue+String(this.offset).blue.bold+":",d);
+		if (this.logWrite) console.log("    #".blue+String(this.offset).blue.bold+": U32=",d);
+		if (this.validateWriteNumbers) {
+			if (d < 0) throw {
+				'name' 		: 'RangeError',
+				'message'	: 'Trying to write number < 0 as UINT32',
+				toString 	: function(){return this.name + ": " + this.message;}
+			};
+			else if (d > 4294967296) throw {
+				'name' 		: 'RangeError',
+				'message'	: 'Trying to write number > 4294967296 as UINT32',
+				toString 	: function(){return this.name + ": " + this.message;}
+			};
+		}
 		this.offset += 4;
 		this.writeBuffer.push( pack4b(d, false) );
-		this.writeSync();
+		this.writeSync( false );
 	}
 
 	/**
 	 * Write a 32-bit signed number
 	 */
 	BinaryEncoder.prototype.writeInt32 = function( d ) {
-		if (this.logWrite) console.log("    #".blue+String(this.offset).blue.bold+":",d);
+		if (this.logWrite) console.log("    #".blue+String(this.offset).blue.bold+": I32=",d);
+		if (this.validateWriteNumbers) {
+			if (d < -2147483648) throw {
+				'name' 		: 'RangeError',
+				'message'	: 'Trying to write number < -2147483648 as UINT32',
+				toString 	: function(){return this.name + ": " + this.message;}
+			};
+			else if (d > 2147483648) throw {
+				'name' 		: 'RangeError',
+				'message'	: 'Trying to write number > 2147483648 as UINT32',
+				toString 	: function(){return this.name + ": " + this.message;}
+			};
+		}
 		this.offset += 4;
 		this.writeBuffer.push( pack4b(d, true) );
-		this.writeSync();
+		this.writeSync( false );
 	}
 
 	/**
 	 * Write a 32-bit float number
 	 */
 	BinaryEncoder.prototype.writeFloat32 = function( d ) {
-		if (this.logWrite) console.log("    #".blue+String(this.offset).blue.bold+":",d);
+		if (this.logWrite) console.log("    #".blue+String(this.offset).blue.bold+": F32=",d);
 		this.offset += 4;
 		this.writeBuffer.push( pack4f(d) );
-		this.writeSync();
+		this.writeSync( false );
 	}
 
 	/**
 	 * Write an 64-bit float number
 	 */
 	BinaryEncoder.prototype.writeFloat64 = function( d ) {
-		if (this.logWrite) console.log("    #".blue+String(this.offset).blue.bold+":",d);
+		if (this.logWrite) console.log("    #".blue+String(this.offset).blue.bold+": F64=",d);
 		this.offset += 8;
 		this.writeBuffer.push( pack8f(d) );
-		this.writeSync();
+		this.writeSync( false );
 	}
 
 	/**
 	 * Write a string stream
 	 */
 	BinaryEncoder.prototype.writeString = function( d ) {
-		if (this.logWrite) console.log("    #".blue+String(this.offset).blue.bold+":",d);
+		if (this.logWrite) console.log("    #".blue+String(this.offset).blue.bold+": STR=",d);
 		this.offset += d.length;
 		this.writeBuffer.push( new Buffer(d) );
-		this.writeSync();
+		this.writeSync( false );
 	}
 
 	/**
 	 * Write buffer
 	 */
 	BinaryEncoder.prototype.writeSync = function( flush ) {
+		var BLOCK_SIZE = 1024 * 16;
+		while (true) {
+			// Proceeed only with enough data
+			var dataLength = this.offset - this.writeOffset;
+			if ((dataLength < BLOCK_SIZE) && (flush === false)) return;
+		
+			// Concat buffers
+			var buf = Buffer.concat( this.writeBuffer );
 
-		// Proceeed only with enough data
-		if ((this.offset - this.writeOffset < 8192) && !flush) return;
-	
-		// Concat buffers
-		var buf = Buffer.concat( this.writeBuffer );
-		this.writeBuffer = [];
-		this.writeOffset = this.offset;
+			// Put buffer tail back so we always flush up to BLOCK_SIZE bytes
+			this.writeBuffer = [];
+			if (dataLength > BLOCK_SIZE) this.writeBuffer.push(buf.slice(BLOCK_SIZE));
 
-		// Write buffer
-		fs.writeSync( this.fd, buf, 0, buf.length );
+			// Write buffer
+			fs.writeSync( this.fd, buf, 0, Math.min(BLOCK_SIZE, buf.length) );
 
+			// Check if done
+			this.writeOffset += BLOCK_SIZE;
+			if (this.writeOffset >= this.offset) return;
+		}
 	}
 
 	////////////////////////////////////////////////////////////
@@ -577,7 +670,7 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 		}
 
 		// Extra padding
-		if (extra) pad+=extra;
+		pad+=extra;
 
 		// Write alignment pad
 		this.writeAlign( sz, pad );
@@ -660,10 +753,10 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 	/**
 	 * Get the TYPE opcode that defines the length of the array
 	 */
-	BinaryEncoder.prototype.getLEN = function( v ) {
-		if (v.length < 256) {
+	BinaryEncoder.prototype.getLEN = function( len ) {
+		if (len < 256) {
 			return LEN.U8;
-		} else if (v.length < 65536) {
+		} else if (len < 65536) {
 			return LEN.U16;
 		} else {
 			return LEN.U32;
@@ -713,7 +806,7 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 					case NUMTYPE.UINT8:
 
 						// No downscaling
-						return -1;
+						return DT.NONE;
 
 					case NUMTYPE.INT16:
 					case NUMTYPE.UINT16:
@@ -745,7 +838,7 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 					case NUMTYPE.UINT16:
 
 						// No downscaling
-						return -1;
+						return DT.NONE;
 
 					case NUMTYPE.INT32:
 					case NUMTYPE.UINT32:
@@ -781,7 +874,7 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 					case NUMTYPE.UINT32:
 
 						// No downscaling
-						return -1;
+						return DT.NONE;
 
 					case NUMTYPE.FLOAT32:
 					case NUMTYPE.FLOAT64:
@@ -824,7 +917,7 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 					case NUMTYPE.FLOAT32:
 
 						// No downscaling
-						return -1;
+						return DT.NONE;
 
 					case NUMTYPE.FLOAT64:
 
@@ -874,7 +967,7 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 					case NUMTYPE.FLOAT64:
 
 						// No downscaling
-						return -1;
+						return DT.NONE;
 
 				}
 				break;
@@ -903,7 +996,7 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 		} else if (v instanceof Int32Array) {
 			return NUMTYPE.INT32;
 		} else  {
-			return -1;
+			return NUMTYPE.UNKNOWN;
 		}
 	}
 
@@ -965,6 +1058,13 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 
 	}
 
+	var oTYPE = 0,
+		oOP = 1,
+		oLEN = 2,
+		oDT = 3,
+		oORIGINAL = 4;
+
+
 	/**
 	 * Optimise a numerical array type
 	 */
@@ -972,90 +1072,49 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 
 		// Get original type and array length
 		var originalType = this.getArrayTYPE(v),
-			len = this.getLEN(v);
+			len = this.getLEN(v.length);
 
 		// If we are using type perserving we cannot further optimise typed arrays
-		if ((originalType > -1) && this.usePerservingOfTypes) {
-			return {
-				'type': originalType,
-				'op': OP.ARRAY_NUM,
-				'len': len,
-				'dt': 0,
-				'original': originalType,
-			}
+		if ((originalType != NUMTYPE.UNKNOWN) && this.usePerservingOfTypes) {
+			// type, op, len, dt, original
+			return [ originalType, OP.ARRAY_NUM, len, 0, originalType ];
 		}
 
 		// Prepare properties
-		var min = v[0], max = v[0], numerical = true,	// Bounds
+		var min = v[0], max = v[0],						// Bounds
 			is_float = false, all_float = true, 		// Float extremes
 			same_val = v[0], all_same = true, 			// Same comparison
-			maxDiff = 0, prev = undefined,				// Differential encoding
-			type_constr = undefined;					// Entity vectorisation
+			maxDiff = 0, prev = undefined;				// Differential encoding
 
 		// Iterate over entities
 		for (var i=0; i<v.length; i++) {
 			var n = v[i], d=0;
-			// Process numbers with numerical principles
-			if (numerical) {
-				if (typeof(n) !== "number") {
-					if ((i == 0) && (this.useEntityVectors)) {
-						// We are not working with numbers, but we will check for vectorisation 
-						numerical = false;
-						// That's not possible when we have basic primitives
-						if ((n === null) || (n === undefined) || (n instanceof Array) || 
-							(n instanceof Uint8Array) || (n instanceof Int8Array) ||
-							(n instanceof Uint16Array) || (n instanceof Int16Array) ||
-							(n instanceof Uint32Array) || (n instanceof Int32Array) ||
-							(n instanceof Float32Array) || (n instanceof Float64Array) ||
-							(n.constructor === ({}).constructor) || (typeof n == "string")) {
-							return undefined;
-						}
-						// Keep type
-						type_constr = n.constructor;
-					} else {
-						// Mixed
-						return undefined;
-					}
-				} else {
-					// Update bounds
-					if (n > max) max = n;
-					if (n < min) min = n;
-					// Check for float
-					if (n % 1 === 0) {
-						// Integer
-						if ((n != 0) && all_float) all_float=false;
-					} else {
-						// Float
-						if (!is_float) is_float=true;
-					}
-					// Check if the entire array has the same value
-					if (all_same && (n != same_val)) all_same = false;
-					// Calculate maximum difference
-					if (prev == undefined) {
-						prev = n;
-					} else {
-						d = Math.abs(n - prev);
-						if (d > maxDiff) maxDiff = d;
-					}
-				}
-			} else {
-				// Check if we have many different types
-				if (!(n instanceof type_constr)) {
-					return undefined;
-				}
-			}
-		}
-
-		// Check if we have vectorisation
-		if (!numerical) {
-			// console.log("VEC ".cyan+"@".blue+String(this.offset).bold.blue+", len="+v.length);
-			return {
-				'type': -1,
-				'op': OP.ENTITY_VECTOR,
-				'len': len,
-				'dt': 0,
-				'original': -1,
+			// REQUIRE numerical values
+			if (typeof n !== "number") throw {
+				'name' 		: 'LogicError',
+				'message'	: 'Trying to apply numerical optimisation in a non-numeric array!',
+				toString 	: function(){return this.name + ": " + this.message;}
 			};
+			// Update bounds
+			if (n > max) max = n;
+			if (n < min) min = n;
+			// Check for float
+			if (n % 1 === 0) {
+				// Integer
+				if ((n != 0) && all_float) all_float=false;
+			} else {
+				// Float
+				if (!is_float) is_float=true;
+			}
+			// Check if the entire array has the same value
+			if (all_same && (n != same_val)) all_same = false;
+			// Calculate maximum difference
+			if (prev == undefined) {
+				prev = n;
+			} else {
+				d = Math.abs(n - prev);
+				if (d > maxDiff) maxDiff = d;
+			}
 		}
 
 		// If everything is same, check now
@@ -1064,28 +1123,18 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 
 			// If all are the same and we don't have an original type, change
 			// to the type of the first argument
-			if (originalType < 0)
+			if (originalType == NUMTYPE.UNKNOWN)
 				originalType = this.getNumTYPE(v[0])
 
 			// Zero is a faster, special case
 			if (same_val == 0) {
-				return {
-					'type': originalType,
-					'op': OP.ARRAY_ZERO,
-					'len': len,
-					'dt': 0,
-					'original': originalType,
-				}
+				// type, op, len, dt, original
+				return [ originalType, OP.ARRAY_ZERO, len, 0, originalType ];
 
 			// Otherwise everything is the same, use repeated array encoding
 			} else {
-				return {
-					'type': originalType,
-					'op': OP.ARRAY_REP,
-					'len': len,
-					'dt': 0,
-					'original': originalType,
-				};
+				// type, op, len, dt, original
+				return [ originalType, OP.ARRAY_REP, len, 0, originalType ];
 			}
 		}
 
@@ -1102,7 +1151,7 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 			}
 
 			// Replace original type if missing
-			if (originalType < 0) originalType = type;
+			if (originalType == NUMTYPE.UNKNOWN) originalType = type;
 
 			// If we enabed differential encoding with fixed precision, check if we can 
 			// further optimise it using differential encoding
@@ -1116,22 +1165,12 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 
 					if (originalType == NUMTYPE.FLOAT32) {
 						// [Downscale dt=0 : FLOAT32 -> INT8]
-						return {
-							'type': NUMTYPE.INT8,
-							'op': OP.ARRAY_DIFF,
-							'len': len,
-							'dt': 0,
-							'original': originalType,
-						}
+						// type, op, len, dt, original
+						return [ NUMTYPE.INT8, OP.ARRAY_DIFF, len, 0, originalType ];
 					} else if (originalType == NUMTYPE.FLOAT64) {
 						// [Downscale dt=0 : FLOAT64 -> INT16]
-						return {
-							'type': NUMTYPE.INT16,
-							'op': OP.ARRAY_DIFF,
-							'len': len,
-							'dt': 1,
-							'original': originalType,
-						}
+						// type, op, len, dt, original
+						return [ NUMTYPE.INT16, OP.ARRAY_DIFF, len, 1, originalType ];
 					} else {
 						// We should NEVER reach this case
 						throw {
@@ -1148,22 +1187,12 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 
 					if (originalType == NUMTYPE.FLOAT32) {
 						// [Downscale dt=1 : FLOAT32 -> INT16]
-						return {
-							'type': NUMTYPE.INT16,
-							'op': OP.ARRAY_DIFF,
-							'len': len,
-							'dt': 1,
-							'original': originalType,
-						}
+						// type, op, len, dt, original
+						return [ NUMTYPE.INT16, OP.ARRAY_DIFF, len, 1, originalType ];
 					} else if (originalType == NUMTYPE.FLOAT64) {
 						// [Downscale dt=1 : FLOAT64 -> INT16]
-						return {
-							'type': NUMTYPE.INT16,
-							'op': OP.ARRAY_DIFF,
-							'len': len,
-							'dt': 1,
-							'original': originalType,
-						}
+						// type, op, len, dt, original
+						return [ NUMTYPE.INT16, OP.ARRAY_DIFF, len, 1, originalType ];
 					} else {
 						// We should NEVER reach this case
 						throw {
@@ -1180,24 +1209,14 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 
 			// Check if we did or did not perform type downscaling
 			var dt = this.getDT( originalType, type );
-			if (dt == -1) {
+			if (dt == DT.NONE) {
 				// We did not change type -> Keep this as typed array of numbers
-				return {
-					'type': originalType,
-					'op': OP.ARRAY_NUM,
-					'len': len,
-					'dt': 0,
-					'original': originalType,
-				}
+				// type, op, len, dt, original
+				return [ originalType, OP.ARRAY_NUM, len, 0, originalType ];
 			} else {
 				// We DID change type -> Store as reduced array of numbers
-				return {
-					'type': type,
-					'op': OP.ARRAY_DWS,
-					'len': len,
-					'dt': dt,
-					'original': originalType,
-				}
+				// type, op, len, dt, original
+				return [ type, OP.ARRAY_DWS, len, dt, originalType ];
 			}
 
 		} else {
@@ -1244,40 +1263,20 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 						// (U)INT8 -> Encoded as UINT8? Not really helping much, don't add diffenc overhead...
 					} else if ((originalType == NUMTYPE.INT16) || (originalType == NUMTYPE.UINT16)) {
 						// [Downscale dt=0 : (U)INT16 -> INT8]
-						return {
-							'type': NUMTYPE.INT8,
-							'op': OP.ARRAY_DIFF,
-							'len': len,
-							'dt': 0,
-							'original': originalType,
-						}
+						// type, op, len, dt, original
+						return [ NUMTYPE.INT8, OP.ARRAY_DIFF, len, 0, originalType ];
 					} else if ((originalType == NUMTYPE.INT32) || (originalType == NUMTYPE.UINT32)) {
 						// [Downscale dt=0 : (U)INT32 -> INT8]
-						return {
-							'type': NUMTYPE.INT8,
-							'op': OP.ARRAY_DIFF,
-							'len': len,
-							'dt': 0,
-							'original': originalType,
-						}
+						// type, op, len, dt, original
+						return [ NUMTYPE.INT8, OP.ARRAY_DIFF, len, 0, originalType ];
 					} else if (originalType == NUMTYPE.FLOAT32) {
 						// [Downscale dt=0 : FLOAT32 -> INT8]
-						return {
-							'type': NUMTYPE.INT8,
-							'op': OP.ARRAY_DIFF,
-							'len': len,
-							'dt': 0,
-							'original': originalType,
-						}
+						// type, op, len, dt, original
+						return [ NUMTYPE.INT8, OP.ARRAY_DIFF, len, 0, originalType ];
 					} else if (originalType == NUMTYPE.FLOAT64) {
 						// [Downscale dt=0 : FLOAT64 -> INT16]
-						return {
-							'type': NUMTYPE.INT16,
-							'op': OP.ARRAY_DIFF,
-							'len': len,
-							'dt': 0,
-							'original': originalType,
-						}
+						// type, op, len, dt, original
+						return [ NUMTYPE.INT16, OP.ARRAY_DIFF, len, 0, originalType ];
 					}
 
 				} else if ((type >= NUMTYPE.INT32) && (maxDiff < 32768)) {
@@ -1292,31 +1291,16 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 						// (U)INT16 -> Encoded as UINT16? Not really helping much, don't add diffenc overhead...
 					} else if ((originalType == NUMTYPE.INT32) || (originalType == NUMTYPE.UINT32)) {
 						// [Downscale dt=0 : (U)INT32 -> INT16]
-						return {
-							'type': NUMTYPE.INT16,
-							'op': OP.ARRAY_DIFF,
-							'len': len,
-							'dt': 1,
-							'original': originalType,
-						}
+						// type, op, len, dt, original
+						return [ NUMTYPE.INT16, OP.ARRAY_DIFF, len, 1, originalType ];
 					} else if (originalType == NUMTYPE.FLOAT32) {
 						// [Downscale dt=0 : FLOAT32 -> INT16]
-						return {
-							'type': NUMTYPE.INT16,
-							'op': OP.ARRAY_DIFF,
-							'len': len,
-							'dt': 1,
-							'original': originalType,
-						}
+						// type, op, len, dt, original
+						return [ NUMTYPE.INT16, OP.ARRAY_DIFF, len, 1, originalType ];
 					} else if (originalType == NUMTYPE.FLOAT64) {
 						// [Downscale dt=0 : FLOAT64 -> INT16]
-						return {
-							'type': NUMTYPE.INT16,
-							'op': OP.ARRAY_DIFF,
-							'len': len,
-							'dt': 0,
-							'original': originalType,
-						}
+						// type, op, len, dt, original
+						return [ NUMTYPE.INT16, OP.ARRAY_DIFF, len, 0, originalType ];
 					}
 
 				}
@@ -1327,24 +1311,14 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 
 			// Check if we did or did not perform type downscaling
 			var dt = this.getDT( originalType, type );
-			if (dt == -1) {
+			if (dt == DT.NONE) {
 				// We did not change type -> Keep this as typed array of numbers
-				return {
-					'type': originalType,
-					'op': OP.ARRAY_NUM,
-					'len': len,
-					'dt': 0,
-					'original': originalType,
-				}
+				// type, op, len, dt, original
+				return [ originalType, OP.ARRAY_NUM, len, 0, originalType ];
 			} else {
 				// We DID change type -> Store as reduced array of numbers
-				return {
-					'type': type,
-					'op': OP.ARRAY_DWS,
-					'len': len,
-					'dt': dt,
-					'original': originalType,
-				}
+				// type, op, len, dt, original
+				return [ type, OP.ARRAY_DWS, len, dt, originalType ];
 			}
 
 		}
@@ -1401,57 +1375,186 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 		} else if (typeof(v) == "string") {
 
 			if (this.logPrimitive) console.log("PRM ".cyan+"@".blue+String(this.offset).blue.bold+": prim=string");
-			if (v.length < 256) {
-				this.writeUint8( OP.STRING_8 );
-				this.writeUint8( v.length );
-				this.writeString( v );
-			} else if (v.length < 65536) {
-				this.writeUint8( OP.STRING_16 );
-				this.writeUint16( v.length );
-				this.writeString( v );
-			} else {
-				this.writeUint8( OP.STRING_32 );
-				this.writeUint32( v.length );
-				this.writeString( v );
+
+			// Write string header
+			var stringLEN = this.getLEN(v.length);
+			this.writeUint8( OP.STRING | stringLEN );
+
+			// Write length prefix and payload
+			switch (stringLEN) {
+				case LEN.U8:
+					this.writeUint8( v.length );
+					break;
+				case LEN.U16:
+					this.writeUint16( v.length );
+					break;
+				case LEN.U32:
+					this.writeUint32( v.length );
+					break;
 			}
+			this.writeString(v);
 
 		} else if (typeof(v) == "number") {
 
 			// Store a single number
-			if (this.logPrimitive) console.log("PRM ".cyan+"@".blue+String(this.offset).blue.bold+": prim=number");
 			var tn = this.getNumTYPE(v);
+			if (this.logPrimitive) console.log("PRM ".cyan+"@".blue+String(this.offset).blue.bold+": prim=number, type="+_TYPENAME[tn]);
 			this.writeUint8( OP.NUMBER_1 | tn );
 			this.writeNum( v, tn );
 
-		} else if ((v instanceof Array) || (v instanceof Uint8Array) || (v instanceof Int8Array) ||
+		} else if (v instanceof Array) {
+
+			// Encode array of primitives
+			if (v.every(function(v){ return typeof v === 'number'; })) {
+				if (this.logPrimitive) console.log("PRM ".cyan+"@".blue+String(this.offset).blue.bold+": prim=numeric array");
+				this.writeEncodedNumericArray( v, true );
+			} else {
+				if (this.logPrimitive) console.log("PRM ".cyan+"@".blue+String(this.offset).blue.bold+": prim=primitive array");
+				this.writeEncodedPrimitiveArray( v, true );
+			}
+
+		} else if ((v instanceof Uint8Array) || (v instanceof Int8Array) ||
 			(v instanceof Uint16Array) || (v instanceof Int16Array) ||
 			(v instanceof Uint32Array) || (v instanceof Int32Array) ||
 			(v instanceof Float32Array) || (v instanceof Float64Array)) {
-
 			// Encode array
-			if (this.logPrimitive) console.log("PRM ".cyan+"@".blue+String(this.offset).blue.bold+": prim=array");
-			this.writeEncodedArray( v );
+			if (this.logPrimitive) console.log("PRM ".cyan+"@".blue+String(this.offset).blue.bold+": prim=numeric array");
+			this.writeEncodedNumericArray( v, true );
 
 		} else if (v.constructor === ({}).constructor) {
 
 			// Encode dictionary
 			if (this.logPrimitive) console.log("PRM ".cyan+"@".blue+String(this.offset).blue.bold+": prim=dict");
-			this.writeEncodedDict( v );				
+			this.writeEncodedDict( v, true );				
 
 		} else {
 
 			// Encode object in the this
 			if (this.logPrimitive) console.log("PRM ".cyan+"@".blue+String(this.offset).blue.bold+": prim=object");
-			this.writeEncodedEntity( v );				
+			this.writeEncodedEntity( v, true );				
 
 		}
 
 	}
 
 	/**
+	 * Try to write a ByREF reference to this object
+	 */
+	BinaryEncoder.prototype.writeByRefAttempt = function( object ) {
+		if (this.useCrossRef < 1) return false;
+
+		// Handle byref cross-references
+		var refID = this.encodedReferences.indexOf(object);
+		if (refID >= 0) {
+			// Write reference
+			if (this.logRef) console.log("PTR ".cyan+"@".blue+String(this.offset).blue.bold+": ref=",refID);
+			this.writeUint8( OP.REF_24 );
+			this.writeUint24( refID );
+			return true;
+		}
+
+		// No x-ref found
+		return false;
+	}
+
+	/**
+	 * Try to write a ByVAL reference to this object
+	 */
+	BinaryEncoder.prototype.writeByValAttemp = function( object, eid ) {
+		if (this.useCrossRef < 2) return false;
+
+		// Proceed according to types
+		if (eid == -1) { // Array
+			for (var i=0, len=this.encodedReferences.length; i<len; i++) {
+				var er = this.encodedReferences[i];
+				if (this.encodedReferences[i] instanceof object.constructor) {
+					// Compare all properties
+					var match = true;
+					for (var j=0; j<object.length; j++)
+						if (object[j] !== this.encodedReferences[i][j]) {
+							match = false;
+							break;
+						}
+					// We found a match
+					if (match) {
+						if (this.logRef) console.log("CPY ".cyan+"@".blue+String(this.offset).blue.bold+": array, ref=",i);
+						this.writeUint8( OP.REF_24 );
+						this.writeUint24( i );
+						return true;
+					}
+				}
+			}
+		} else if (eid == -2) { // Dict
+			for (var i=0; i<this.encodedReferences.length; i++) {
+				if (this.encodedReferences[i] instanceof object.constructor) {
+					// Compare all properties
+					var match = true;
+					for (var k in object)
+						if (object.hasOwnProperty(k))
+							if (object[k] !== this.encodedReferences[i][k]) {
+								match = false;
+								break;
+							}
+					// We found a match
+					if (match) {
+						if (this.logRef) console.log("CPY ".cyan+"@".blue+String(this.offset).blue.bold+": dict, ref=",i);
+						this.writeUint8( OP.REF_24 );
+						this.writeUint24( i );
+						return true;
+					}
+				}
+			}
+		} else {
+
+			// Check if we have a BST for this type
+			if (this.encodedByValBST[eid] !== undefined) {
+				var id = this.encodedByValBST[eid].search( object );
+				if (id.length > 0) {
+					if (this.logRef) console.log("CPY ".cyan+"@".blue+String(this.offset).blue.bold+": entity, ref=",id[0]);
+					this.writeUint8( OP.REF_24 );
+					this.writeUint24( id[0] );
+					return true;
+				}
+			} else {
+				// Create a new BST for this entity type
+				this.encodedByValBST[eid] = new BinarySearchTree({
+					compareKeys: objectBstComparison,
+					checkValueEquality: objectBstEquals,
+					unique: true,
+				});
+			}
+
+		}
+
+		// We didn't find a match
+		return false;
+	}
+
+	/**
+	 * Keep object for cross-referencing
+	 */
+	BinaryEncoder.prototype.keepForXRef = function( object ) {
+		if (this.useCrossRef < 1) return false;
+		if (this.encodedReferences.length < 16777216) {
+
+			// Update byref table
+			this.encodedReferences.push(object);
+
+			// Display a warning when we have filled the 24-bit table
+			if (this.encodedReferences.length == 16777216)
+				console.error("References table is full");
+		}
+	}
+
+	/**
 	 * Encode a dictionary
 	 */
 	BinaryEncoder.prototype.writeEncodedDict = function( srcDict ) {
+
+		// Check for cross-referencing
+		// if (this.writeByRefAttempt(srcDict)) return;
+		// if (this.writeByValAttemp(srcDict, -2)) return;
+		// this.keepForXRef(srcDict);
 
 		// Count own properties
 		var propCount = 0;
@@ -1483,7 +1586,7 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 
 		// Log
 		if (this.logDiffEnc)
-			console.log("DIF ".cyan+"@".blue+String(this.offset).blue.bold+": len="+srcArray.length+", type="+_TYPENAME[numType]+", enctype="+_ENCTYPENAME[arrType]+", start=",srcArray[0]);
+			console.log("DIF ".cyan+"@".blue+String(this.offset).blue.bold+": len="+srcArray.length+", type="+_TYPENAME[numType]+", enctype="+_ENCTYPENAME[dt]+", start=",srcArray[0]);
 
 		// Write first value
 		this.writeNum( srcArray[0], numType );
@@ -1523,9 +1626,9 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 	}
 
 	/**
-	 * Encode array of elements
+	 * Encode array of numbers
 	 */
-	BinaryEncoder.prototype.writeEncodedArray = function( srcArray, writeLength ) {
+	BinaryEncoder.prototype.writeEncodedPrimitiveArray = function( srcArray, writeLength ) {
 
 		// If array is empty, write empty array header
 		if (srcArray.length == 0) {
@@ -1535,79 +1638,123 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 			return;
 		}
 
+		// Check for cross-referencing
+		// if (this.writeByRefAttempt(srcArray)) return;
+		// if (this.writeByValAttemp(srcArray, -1)) return;
+		// this.keepForXRef(srcArray);
+
+		// Default is to write length
+		if (writeLength === undefined) writeLength = true;
+
+		// Get array type
+		var arrayLEN = this.getLEN( srcArray.length );
+
+		// Write array header
+		if (arrayLEN == LEN.U8) {
+			if (this.logArray) console.log(" [] ".cyan+"@".blue+String(this.offset).blue.bold+": x8, len=", srcArray.length);
+			this.writeUint8( OP.ARRAY_ANY | arrayLEN );
+			if (writeLength) this.writeUint16( srcArray.length );
+		} else if (arrayLEN == LEN.U16) {
+			if (this.logArray) console.log(" [] ".cyan+"@".blue+String(this.offset).blue.bold+": x16, len=", srcArray.length);
+			this.writeUint8( OP.ARRAY_ANY | arrayLEN );
+			if (writeLength) this.writeUint16( srcArray.length );
+		} else {
+			if (this.logArray) console.log(" [] ".cyan+"@".blue+String(this.offset).blue.bold+": x32, len=", srcArray.length);
+			this.writeUint8( OP.ARRAY_ANY | arrayLEN );
+			if (writeLength) this.writeUint16( srcArray.length );
+		}
+
+		// Write primitives
+		for (var i=0; i<srcArray.length; i++) {
+
+			// Check if we can compact the following up to 255 numerical values
+			var canCompact = false;
+			if (this.useCompact) {
+				for (var j=Math.min(srcArray.length-1-i, 255); j>1; j--) {
+
+					// Check if the current slice is numeric
+					var slice = srcArray.slice(i,i+j);
+					if ((slice instanceof Uint8Array) || (slice instanceof Int8Array) ||
+						(slice instanceof Uint16Array) || (slice instanceof Int16Array) ||
+						(slice instanceof Uint32Array) || (slice instanceof Int32Array) ||
+						(slice instanceof Float32Array) || (slice instanceof Float64Array) ||
+						((slice instanceof Array) && (slice.every(function(v){ return typeof v === 'number'; }))) ) {
+
+						// Get slice type
+						var sliceType = this.getMinFitNumTYPE( slice );
+
+						// Write opcode
+						if (this.logCompact) console.log(" >< ".cyan+"@".blue+String(this.offset).blue.bold+": compact, len=", j,", type=", _TYPENAME[sliceType], ", values=",slice);
+						this.writeUint8(
+								OP.NUMBER_N |	// We have N consecutive numbers
+								sliceType		// Consecutive numbers type
+							);
+						this.writeUint8( j ); 	// How many consecutive values we have
+
+						// Write values
+						this.writeNum( slice, sliceType );
+
+						// We used compact
+						canCompact = true;
+						i += j-1;
+						break;
+					}
+				}
+			}
+
+			// If we didn't use compacted format, write primitive
+			if (!canCompact)
+				this.writePrimitive( srcArray[i] );
+
+		}
+
+	}
+
+	/**
+	 * Encode array of elements
+	 */
+	BinaryEncoder.prototype.writeEncodedNumericArray = function( srcArray, writeLength ) {
+
+		// If array is empty, write empty array header
+		if (srcArray.length == 0) {
+			// Write ARRAY_EMPTY header
+			if (this.logArray) console.log(" [] ".cyan+"@".blue+String(this.offset).blue.bold+": empty");
+			this.writeUint8( OP.ARRAY_EMPTY );
+			return;
+		}
+
+		// Check for cross-referencing
+		// if (this.writeByRefAttempt(srcArray)) return;
+		// if (this.writeByValAttemp(srcArray, -1)) return;
+		// this.keepForXRef(srcArray);
+
 		// Default is to write length
 		if (writeLength === undefined) writeLength = true;
 
 		// Get array type
 		var arrayType = this.optimiseNumArray( srcArray ),
-			arrayLEN = this.getLEN( srcArray );
+			arrayLEN = this.getLEN( srcArray.length );
 
-		// If we don't have a numeric array, store entities one by one
-		if (arrayType == undefined) {
+		// Check if we mis-identified the entity
+		if (arrayType === undefined) {
 
-			// Write array header
-			if (arrayLEN == LEN.U8) {
-				if (this.logArray) console.log(" [] ".cyan+"@".blue+String(this.offset).blue.bold+": x8, len=", srcArray.length,", peak=",srcArray[0]);
-				this.writeUint8( OP.ARRAY_ANY | arrayLEN );
-				if (writeLength) this.writeUint16( srcArray.length );
-			} else if (arrayLEN == LEN.U16) {
-				if (this.logArray) console.log(" [] ".cyan+"@".blue+String(this.offset).blue.bold+": x16, len=", srcArray.length,", peak=",srcArray[0]);
-				this.writeUint8( OP.ARRAY_ANY | arrayLEN );
-				if (writeLength) this.writeUint16( srcArray.length );
-			} else {
-				if (this.logArray) console.log(" [] ".cyan+"@".blue+String(this.offset).blue.bold+": x32, len=", srcArray.length,", peak=",srcArray[0]);
-				this.writeUint8( OP.ARRAY_ANY | arrayLEN );
-				if (writeLength) this.writeUint16( srcArray.length );
-			}
-
-			// Write primitives
-			for (var i=0; i<srcArray.length; i++) {
-
-				// Check if we can compact the following up to 255 numerical values
-				var canCompact = false;
-				if (this.useCompact) {
-					for (var j=Math.min(srcArray.length-1-i, 255); j>1; j--) {
-
-						// Check if the current slice is numeric
-						var slice = srcArray.slice(i,i+j),
-							sliceType = this.getMinFitNumTYPE( slice );
-						if (sliceType !== undefined) {
-
-							// Write opcode
-							if (this.logCompact) console.log(" >< ".cyan+"@".blue+String(this.offset).blue.bold+": compact, len=", j,", type=", _TYPENAME[sliceType], ", values=",slice);
-							this.writeUint8(
-									OP.NUMBER_N |	// We have N consecutive numbers
-									sliceType		// Consecutive numbers type
-								);
-							this.writeUint8( j ); 	// How many consecutive values we have
-
-							// Write values
-							this.writeNum( slice, sliceType );
-
-							// We used compact
-							canCompact = true;
-							i += j-1;
-							break;
-						}
-					}
-				}
-
-				// If we didn't use compacted format, write primitive
-				if (!canCompact)
-					this.writePrimitive( srcArray[i] );
-
-			}
+			// We should NEVER reach this
+			throw {
+				'name' 		: 'LogicError',
+				'message'	: 'Mis-identified array as numeric while optimiseNumArray reported non-numeric',
+				toString 	: function(){return this.name + ": " + this.message;}
+			};
 
 		} else {
 
 			//
 			// [0] Array with zero value
 			//
-			if (arrayType.op == OP.ARRAY_ZERO) {
+			if (arrayType[oOP] == OP.ARRAY_ZERO) {
 
 				// Write zero header
-				if (this.logArray) console.log("[0] ".cyan+"@".blue+String(this.offset).blue.bold+": zero, len=", srcArray.length,", type=", _TYPENAME[arrayType.type], ", value=",srcArray[0]);
-				this.writeUint8( OP.ARRAY_ZERO | arrayType.type );
+				if (this.logArray) console.log("[0] ".cyan+"@".blue+String(this.offset).blue.bold+": zero, len=", srcArray.length,", type=", _TYPENAME[arrayType[oTYPE]], ", value=",srcArray[0]);
+				this.writeUint8( OP.ARRAY_ZERO | arrayType[oTYPE] );
 
 				// Write length according to size
 				if (writeLength) {
@@ -1625,11 +1772,11 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 			//
 			// [1] Repeating values in the array
 			//
-			else if (arrayType.op == OP.ARRAY_REP) {
+			else if (arrayType[oOP] == OP.ARRAY_REP) {
 
 				// Write repeat header
-				if (this.logArray) console.log("[n] ".cyan+"@".blue+String(this.offset).blue.bold+": repeat, len=", srcArray.length,", type=", _TYPENAME[arrayType.type], ", value=",srcArray[0]);
-				this.writeUint8( OP.ARRAY_REP | arrayType.type | (arrayLEN << 3) );
+				if (this.logArray) console.log("[n] ".cyan+"@".blue+String(this.offset).blue.bold+": repeat, len=", srcArray.length,", type=", _TYPENAME[arrayType[oTYPE]], ", value=",srcArray[0]);
+				this.writeUint8( OP.ARRAY_REP | arrayType[oTYPE] | (arrayLEN << 3) );
 
 				// Write length according to size
 				if (writeLength) {
@@ -1643,25 +1790,25 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 				}
 
 				// Write value
-				this.writeNum( srcArray[0], arrayType.type );
+				this.writeNum( srcArray[0], arrayType[oTYPE] );
 
 			}
 
 			//
 			// [2] Unmodified typed array entities
 			//
-			else if (arrayType.op == OP.ARRAY_NUM) {
+			else if (arrayType[oOP] == OP.ARRAY_NUM) {
 
 				// Write alignment header
 				if (writeLength) {
-					this.writeAlignFor( arrayType.type, arrayLEN, 1 );
+					this.writeAlignFor( arrayType[oTYPE], arrayLEN, 1 );
 				} else {
-					this.writeAlignFor( arrayType.type, LEN.U8 );
+					this.writeAlignFor( arrayType[oTYPE], LEN.U8, 0 );
 				}
 
 				// Write repeat header
-				if (this.logArray) console.log(" [] ".cyan+"@".blue+String(this.offset).blue.bold+": typed, len=", srcArray.length,", type=", _TYPENAME[arrayType.type]);
-				this.writeUint8( OP.ARRAY_NUM | arrayType.type | (arrayLEN << 3) );
+				if (this.logArray) console.log(" [] ".cyan+"@".blue+String(this.offset).blue.bold+": typed, len=", srcArray.length,", type=", _TYPENAME[arrayType[oTYPE]]);
+				this.writeUint8( OP.ARRAY_NUM | arrayType[oTYPE] | (arrayLEN << 3) );
 
 				// Write length according to size
 				if (writeLength) {
@@ -1675,25 +1822,25 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 				}
 
 				// Write array
-				this.writeNum( srcArray, arrayType.type );
+				this.writeNum( srcArray, arrayType[oTYPE] );
 
 			}
 
 			//
 			// [3] Downscaled array type
 			//
-			else if (arrayType.op == OP.ARRAY_DWS) {
+			else if (arrayType[oOP] == OP.ARRAY_DWS) {
 
 				// Write alignment header
 				if (writeLength) {
-					this.writeAlignFor( arrayType.type, arrayLEN, 1 );
+					this.writeAlignFor( arrayType[oTYPE], arrayLEN, 1 );
 				} else {
-					this.writeAlignFor( arrayType.type, LEN.U8 );
+					this.writeAlignFor( arrayType[oTYPE], LEN.U8, 0 );
 				}
 
 				// Write repeat header
-				if (this.logArray) console.log("[v] ".cyan+"@".blue+String(this.offset).blue.bold+": downscaled, len=", srcArray.length,", from=",_TYPENAME[arrayType.original],", to=",_TYPENAME[arrayType.type]);
-				this.writeUint8( OP.ARRAY_NUM | arrayType.original | (arrayLEN << 3) | (arrayType.dt << 5) );
+				if (this.logArray) console.log("[v] ".cyan+"@".blue+String(this.offset).blue.bold+": downscaled, len=", srcArray.length,", from=",_TYPENAME[arrayType[oORIGINAL]],", to=",_TYPENAME[arrayType[oTYPE]]);
+				this.writeUint8( OP.ARRAY_NUM | arrayType[oORIGINAL] | (arrayLEN << 3) | (arrayType[oDT] << 5) );
 
 				// Write length according to size
 				if (writeLength) {
@@ -1707,25 +1854,25 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 				}
 
 				// Write array
-				this.writeNum( srcArray, arrayType.type );
+				this.writeNum( srcArray, arrayType[oTYPE] );
 
 			}
 
 			//
 			// [4] Difference-encoded array type
 			//
-			else if (arrayType.op == OP.ARRAY_DIFF) {
+			else if (arrayType[oOP] == OP.ARRAY_DIFF) {
 
 				// Write alignment header
 				if (writeLength) {
-					this.writeAlignFor( arrayType.type, arrayLEN, 1 );
+					this.writeAlignFor( arrayType[oTYPE], arrayLEN, 1 );
 				} else {
-					this.writeAlignFor( arrayType.type, LEN.U8 );
+					this.writeAlignFor( arrayType[oTYPE], LEN.U8, 0 );
 				}
 
 				// Write repeat header
-				if (this.logArray) console.log("[Δ] ".cyan+"@".blue+String(this.offset).blue.bold+": diffenc, len=", srcArray.length,", from=",_TYPENAME[arrayType.original],", to=",_TYPENAME[arrayType.type]);
-				this.writeUint8( OP.ARRAY_DIFF | arrayType.original | (arrayLEN << 3) | (arrayType.dt << 5) );
+				if (this.logArray) console.log("[Δ] ".cyan+"@".blue+String(this.offset).blue.bold+": diffenc, len=", srcArray.length,", from=",_TYPENAME[arrayType[oORIGINAL]],", to=",_TYPENAME[arrayType[oTYPE]]);
+				this.writeUint8( OP.ARRAY_DIFF | arrayType[oORIGINAL] | (arrayLEN << 3) | (arrayType[oDT] << 5) );
 
 				// Write length according to size
 				if (writeLength) {
@@ -1739,14 +1886,14 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 				}
 
 				// Write array with differential encoding
-				this.writeDiffEncNum( srcArray, arrayType.original, arrayType.dt );
+				this.writeDiffEncNum( srcArray, arrayType[oORIGINAL], arrayType[oDT] );
 
 			}
 
 			//
 			// [5] Vector of entities
 			//
-			else if (arrayType.op == OP.ENTITY_VECTOR) {
+			else if (arrayType[oOP] == OP.ENTITY_VECTOR) {
 
 				// Write vector header
 				if (this.logArray) console.log("{V} ".cyan+"@".blue+String(this.offset).blue.bold+": vector, len=", srcArray.length);
@@ -1786,7 +1933,7 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 					for (var i=0; i<PROPERTIES[eid].length; i++) {
 						propertyTable[i] = object[ PROPERTIES[eid][i] ];
 					}
-					this.writeEncodedArray( propertyTable, false );
+					this.writeEncodedNumericArray( propertyTable, false );
 				}
 
 			}
@@ -1797,11 +1944,13 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 			else {
 				throw {
 					'name' 		: 'LogicError',
-					'message'	: 'Analysis of the array returned unexpected results (type='+arrayType.op+')!',
+					'message'	: 'Analysis of the array returned unexpected results (type='+arrayType[oOP]+')!',
 					toString 	: function(){return this.name + ": " + this.message;}
 				}
 			}
 
+			// Do not continue
+			return;
 		}
 
 	}
@@ -1811,17 +1960,9 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 	 */
 	BinaryEncoder.prototype.writeEncodedEntity = function( object ) {
 
-		// Handle byref cross-references
-		if (this.useCrossRef > 0) {
-			var refID = this.encodedReferences.indexOf(object);
-			if (refID >= 0) {
-				// Write reference
-				if (this.logRef) console.log("PTR ".cyan+"@".blue+String(this.offset).blue.bold+": ref=",refID);
-				this.writeUint8( OP.REF_24 );
-				this.writeUint24( refID );
-				return
-			}
-		}
+		// Check for byref cross-referencing
+		if (this.writeByRefAttempt(object))
+			return;
 
 		// Get the entity ID of this object
 		var eid = -1;
@@ -1845,42 +1986,14 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 		}
 
 		// Handle ByVal cross-references
-		if (this.useCrossRef > 1) {
-
-			// Check if we have a BST for this type
-			if (this.encodedByValBST[eid] !== undefined) {
-				var id = this.encodedByValBST[eid].search( propertyTable );
-				if (id.length > 0) {
-					if (this.logRef) console.log("CPY ".cyan+"@".blue+String(this.offset).blue.bold+": ref=",id[0]);
-					this.writeUint8( OP.REF_24 );
-					this.writeUint24( id[0] );
-					return;
-				}
-			} else {
-				// Create a new BST for this entity type
-				this.encodedByValBST[eid] = new BinarySearchTree({
-					compareKeys: objectBstComparison,
-					checkValueEquality: objectBstEquals,
-					unique: true,
-				});
-			}
-
-		}
+		if (this.writeByValAttemp(propertyTable, eid))
+			return;
 
 		// Keep object in cross-referencing database
-		if (this.useCrossRef > 0) {
-			if (this.encodedReferences.length < 16777216) {
-
-				// Update byref table
-				this.encodedReferences.push(object);
-
-				// Update BST
-				if (this.useCrossRef > 1)
-					this.encodedByValBST[eid].insert( propertyTable, this.encodedReferences.length-1 );
-
-				if (this.encodedReferences.length == 16777216)
-					console.error("References table is full");
-			}
+		this.keepForXRef( object, eid );
+		// Update BST if we have entity id
+		if (this.useCrossRef > 1) {
+			this.encodedByValBST[eid].insert( propertyTable, this.encodedReferences.length-1 );
 		}
 
 		// Post-process entities (if needed)
@@ -1897,7 +2010,13 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 
 		// Write down property table
 		if (this.logEntity) console.log("ENT ".cyan+"@".blue+String(this.offset).blue.bold,": eid=" + eid);
-		this.writeEncodedArray( propertyTable, false );
+
+		// Pick encoding function according to type (does not break v8 optimisation)
+		if ((propertyTable instanceof Array) && (propertyTable.every(function(v){ return typeof v === 'number'; }))) {
+			this.writeEncodedNumericArray( propertyTable, false );
+		} else {
+			this.writeEncodedPrimitiveArray( propertyTable, false );
+		}
 
 	}
 
@@ -1908,6 +2027,7 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 
 		// Write string objects
 		var startOffset = this.offset;
+		console.log("KEY ".red+"@".blue.bold+String(this.offset).blue+": key-index");
 		for (var i=0; i<this.keyDictIndex.length; i++) {
 			this.writePrimitive( this.keyDictIndex[i] );
 		}

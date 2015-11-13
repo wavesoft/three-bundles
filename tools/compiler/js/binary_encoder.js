@@ -121,7 +121,7 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 	ENTITIES[69][3] = function( values, object ) {
 
 		var fname = values[0];
-		console.log("INFO:".green, "Embedding",fname.magenta);
+		console.log("INFO:".green, "Embedding".gray,fname.magenta.dim);
 
 		var buf = fs.readFileSync( values[0] ),
 			ext = values[0].split(".").pop().toLowerCase(),
@@ -215,17 +215,17 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 		this.useCompact = true;
 
 		/**
-		 * Be strict when analyzing arrays
+		 * Allow mixing of float/integers in numerical arrays
 		 *
-		 * If TRUE float and integer values will never mix on the same array
-		 * when trying to optimise it. If false, this might break some javascript 
-		 * code if due to rounding errors when an integer gets converted to float.
+		 * If TRUE float and integer values are allowed to mix on the same array
+		 * when trying to optimise it. This might break some javascript code if due 
+		 * to rounding errors when an integer gets converted to float.
 		 *
 		 * If unsure, keep it to TRUE. 
 		 *
 		 * @property {boolean}
 		 */
-		this.useStrictFloat = true;
+		this.useMixedNumTypes = true;
 
 		/**
 		 * Perserve the typed array types
@@ -297,7 +297,7 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 		 *
 		 * @param {boolean}
 		 */
-		this.validateWriteNumbers = false;
+		this.validateWriteNumbers = true;
 
 		// Debug logging flags
 		this.logWrite 		= false;
@@ -338,7 +338,7 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 		this.keyDictIndex = [ ];
 
 		// Open write stream
-		console.log("INFO:".green, "Creating bundle", filename.cyan);
+		console.log("INFO:".green, "Creating bundle", filename.cyan.bold);
 		this.fd = fs.openSync( filename, 'w' );
 		this.writeBuffer = [];
 		this.writeOffset = 0;
@@ -374,7 +374,9 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 		if (!prefix) prefix="";
 
 		// Import into an easy-to-process format
-		for (var k in db) {
+		var keys = Object.keys(db);
+		for (var i=0; i<keys.length; i++) {
+			var k = keys[i];
 			if (!db.hasOwnProperty(k)) continue;
 			this.dbTags.push( prefix+k );
 			this.dbObjects.push( db[k] );
@@ -1005,8 +1007,9 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 	 * (A lighter and faster version of optimiseNumArray)
 	 */
 	BinaryEncoder.prototype.getMinFitNumTYPE = function( v ) {
-		var min = v[0], max = v[0], 			// Bounds
-			is_float = false, all_float = true; // Float extremes
+		var min = v[0], max = v[0], 	// Bounds
+			is_integer = false,			// Float extremes
+			is_float = false; 			// Float extremes
 
 		for (var i=0; i<v.length; i++) {
 			var n = v[i], d=0;
@@ -1015,18 +1018,30 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 			// Update bounds
 			if (n > max) max = n;
 			if (n < min) min = n;
+			// Skip zeros from type detection
+			if (n == 0) continue;
 			// Check for float
 			if (n % 1 === 0) {
-				// Integer
-				if ((n != 0) && all_float) all_float=false;
+				// Mark integer fields
+				if (!is_integer) is_integer=true;
+				// Do not mix integers and floats (unless that's zero)
+				if (is_float) return undefined;
 			} else {
 				// Float
 				if (!is_float) is_float=true;
+				// Do not mix integers and floats (unless that's zero)
+				if (is_integer) return undefined;
 			}
 		}
 
+		// If neither float nor integer, that's a zero, it fits in the 
+		// smallest possible array time
+		if (!is_float && !is_integer) {
+			return NUMTYPE.UINT8;
+		}
+
 		// If it's float, check for float bounds
-		if ((this.useStrictFloat && all_float) || (!this.useStrictFloat && is_float)) {
+		if (is_float) {
 			if (Math.max( Math.abs(max), Math.abs(min) ) >= 3.40282e+38) {
 				return NUMTYPE.FLOAT64;
 			} else {
@@ -1088,7 +1103,7 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 
 		// Iterate over entities
 		for (var i=0; i<v.length; i++) {
-			var n = v[i], d=0;
+			var n = isNaN(v[i]) ? 0 : v[i], d=0;
 			// REQUIRE numerical values
 			if (typeof n !== "number") throw {
 				'name' 		: 'LogicError',
@@ -1140,8 +1155,7 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 
 		// Check if we have to use floats
 		var type = 0;
-		if ((this.useStrictFloat && all_float && !(all_same && (same_val == 0))) || 
-			(!this.useStrictFloat && is_float)) {
+		if (is_float) {
 
 			// Check bounds if it doesn't fit in FLOAT32
 			if (Math.max( Math.abs(max), Math.abs(min) ) >= 3.40282e+38) {
@@ -1247,7 +1261,7 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 			}
 
 			// Replace original type if missing
-			if (originalType < 0) originalType = type;
+			if (originalType == NUMTYPE.UNKNOWN) originalType = type;
 
 			// If we enabled differential encoding for integers, check if we can 
 			// further optimise it using differential encoding
@@ -1488,13 +1502,16 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 			for (var i=0; i<this.encodedReferences.length; i++) {
 				if (this.encodedReferences[i] instanceof object.constructor) {
 					// Compare all properties
-					var match = true;
-					for (var k in object)
+					var match = true,
+						keys = Object.keys(object);
+					for (var i=0; i<keys.length; i++) {
+						var k = keys[i];
 						if (object.hasOwnProperty(k))
 							if (object[k] !== this.encodedReferences[i][k]) {
 								match = false;
 								break;
 							}
+					}
 					// We found a match
 					if (match) {
 						if (this.logRef) console.log("CPY ".cyan+"@".blue+String(this.offset).blue.bold+": dict, ref=",i);
@@ -1557,21 +1574,20 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 		// this.keepForXRef(srcDict);
 
 		// Count own properties
-		var propCount = 0;
-		for (var k in srcDict) {
-			if (!srcDict.hasOwnProperty(k)) continue;
+		var propCount = 0,
+			keys = Object.keys(srcDict);
+		for (var i=0; i<keys.length; i++) {
 			propCount++;
 		}
 
 		// Write down objects
 		this.writeUint8(OP.DICT);
-		this.writeUint8(propCount);
-		for (var k in srcDict) {
-			if (!srcDict.hasOwnProperty(k)) continue;
+		this.writeUint8(keys.length);
+		for (var i=0; i<keys.length; i++) {
 			// Write the index of the key
-			this.writeUint16(this.getKeyIndex(k));
+			this.writeUint16(this.getKeyIndex(keys[i]));
 			// Write primitive
-			this.writePrimitive(srcDict[k]);
+			this.writePrimitive(srcDict[keys[i]]);
 		}
 
 	}
@@ -1582,30 +1598,32 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 	BinaryEncoder.prototype.writeDiffEncNum = function( srcArray, numType, dt ) {
 
 		// Extract type definition
-		var is_float = numType >= NUMTYPE.FLOAT32;
+		var is_float = (numType >= NUMTYPE.FLOAT32),
+			val0 = isNaN(srcArray[0]) ? 0 : srcArray[0];
 
 		// Log
 		if (this.logDiffEnc)
-			console.log("DIF ".cyan+"@".blue+String(this.offset).blue.bold+": len="+srcArray.length+", type="+_TYPENAME[numType]+", enctype="+_ENCTYPENAME[dt]+", start=",srcArray[0]);
+			console.log("DIF ".cyan+"@".blue+String(this.offset).blue.bold+": len="+srcArray.length+", type="+_TYPENAME[numType]+", enctype="+_ENCTYPENAME[dt]+", start=",val0);
 
 		// Write first value
-		this.writeNum( srcArray[0], numType );
+		this.writeNum( val0, numType );
 
 		// Write differential values
-		var lastVal = srcArray[0], delta = 0;
+		var lastVal = val0, delta = 0;
 		for (var i=1; i<srcArray.length; i++) {
+			var v = isNaN(srcArray[i]) ? 0 : srcArray[i];
 
 			// Calculate delta in integer format
-			delta = srcArray[i] - lastVal;
+			delta = v - lastVal;
 			if (is_float) {
 				delta = parseInt( delta * this.diffEncPrecision );
 			}
 
 			// Log delta
-			if (this.logDiffEnc && this.logWrite) console.log("    %".blue+String(this.offset).blue.bold+": delta=",delta,", real=",srcArray[i],", last=",lastVal);
+			if (this.logDiffEnc) console.log("    %".blue+String(this.offset).blue.bold+": delta=",delta,", real=",v,", last=",lastVal);
 
 			// Write delta according to difference array format
-			if (srcArray == NUMTYPE.FLOAT64) { // (Special case)
+			if (numType == NUMTYPE.FLOAT64) { // (Special case)
 				if (dt == 0) {
 					this.writeFloat32( delta );
 				} else if (dt == 1) {
@@ -1620,7 +1638,7 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 			}
 
 			// Keep value for next iteration
-			lastVal = srcArray[i];
+			lastVal = v;
 		}
 
 	}
@@ -1682,22 +1700,25 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 
 						// Get slice type
 						var sliceType = this.getMinFitNumTYPE( slice );
+						if (sliceType !== undefined)  {
 
-						// Write opcode
-						if (this.logCompact) console.log(" >< ".cyan+"@".blue+String(this.offset).blue.bold+": compact, len=", j,", type=", _TYPENAME[sliceType], ", values=",slice);
-						this.writeUint8(
-								OP.NUMBER_N |	// We have N consecutive numbers
-								sliceType		// Consecutive numbers type
-							);
-						this.writeUint8( j ); 	// How many consecutive values we have
+							// Write opcode
+							if (this.logCompact) console.log(" >< ".cyan+"@".blue+String(this.offset).blue.bold+": compact, len=", j,", type=", _TYPENAME[sliceType], ", values=",slice);
+							this.writeUint8(
+									OP.NUMBER_N |	// We have N consecutive numbers
+									sliceType		// Consecutive numbers type
+								);
+							this.writeUint8( j ); 	// How many consecutive values we have
 
-						// Write values
-						this.writeNum( slice, sliceType );
+							// Write values
+							this.writeNum( slice, sliceType );
 
-						// We used compact
-						canCompact = true;
-						i += j-1;
-						break;
+							// We used compact
+							canCompact = true;
+							i += j-1;
+							break;
+
+						}
 					}
 				}
 			}

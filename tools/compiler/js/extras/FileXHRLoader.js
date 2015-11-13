@@ -45,7 +45,7 @@ define(["three", "fs", "colors"], function(THREE, fs, colors) {
             }
 
             var scope = this;
-            console.info("Loading",url.gray);
+            console.info("Loading".gray,url.gray);
 
             fs.readFile(url, { }, function (err, data ) {
                 if (err) {

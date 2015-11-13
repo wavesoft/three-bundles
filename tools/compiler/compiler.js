@@ -13,8 +13,9 @@ var opt = require('node-getopt').create([
   ['O' , 'optimise=LEVEL+'     , 'Specify optimisation level'],
   ['b' , 'bundle-dir=DIR'  	   , 'Specify bundle base directory'],
   ['L' , 'load=BUNDLE+'  	   , 'Load the specified bundle before compiling'],
+  [''  , 'log=FLAGS' 	 	   , 'Enable logging (see flags below)'],
   ['h' , 'help'                , 'Display this help'],
-  ['v' , 'version'             , 'Show version']
+  ['v' , 'version'             , 'Show version'],
 ])
 .setHelp(
   "Usage: node r.js compile.js [OPTION] BUNDLE [BUNDLE ...]\n" +
@@ -22,7 +23,7 @@ var opt = require('node-getopt').create([
   "\n" +
   "[[OPTIONS]]\n" +
   "\n" +
-  "Optimisation options:" +
+  "Optimisation options:\n" +
   "\n" +
   "  -O0                      Disable all optimisations (Safest)\n" +
   "                            - Perserve TypedArrays as-is\n" +
@@ -34,6 +35,19 @@ var opt = require('node-getopt').create([
   "                            - Integer differential encoding\n" +
   "  -O3                      Unsafe optimisations (Smallest)\n" +
   "                            - Float differential encoding\n" +
+  "\n" +
+  "Logging Flags:\n" +
+  "\n" +
+  "  t                        Log import/export tag opcodes\n" +
+  "  p                        Log primitive opcodes\n" +
+  "  c                        Log compacting opcodes\n" +
+  "  e                        Log entity opcodes\n" +
+  "  l                        Log alignment opcodes\n" +
+  "  r                        Log internal cross-reference opcodes\n" +
+  "  d                        Log differential encoding array opcodes\n" +
+  "  a                        Log array optices\n" +
+  "  w                        Log low-level byte writes\n" +
+  "  -                        Log everything\n" +
   "\n" +
   "Installation: npm install three-bundles\n" +
   "Respository:  https://github.com/wavesoft/three-bundles"
@@ -101,9 +115,11 @@ requirejs(["require", "three", "js/binary_encoder", "three-bundles"], function(r
 
 	// Apply optimisation flags to encode
 	var applyFlags = function(encoder) {
-			var level = 2;
+			var level = 2, logTags = "";
 			if (opt.options['optimise'] !== undefined)
 				level = parseInt(opt.options['optimise']);
+			if (opt.options['log'] !== undefined)
+				logTags = opt.options['log'];
 
 			// Handle errors
 			if (level > 3) {
@@ -137,6 +153,30 @@ requirejs(["require", "three", "js/binary_encoder", "three-bundles"], function(r
 				encoder.usePerservingOfTypes = false;
 				encoder.useDiffEnc = 2;
 			}
+
+			// Apply logging flags
+			for (var i=0; i<logTags.length; i++) {
+				var t = logTags[i];
+				if ((t == "-") || (t == "t"))
+					encoder.logTag = true;
+				if ((t == "-") || (t == "p"))
+					encoder.logPrimitive = true;
+				if ((t == "-") || (t == "c"))
+					encoder.logCompact = true;
+				if ((t == "-") || (t == "e"))
+					encoder.logEntity = true;
+				if ((t == "-") || (t == "l"))
+					encoder.logAlign = true;
+				if ((t == "-") || (t == "r"))
+					encoder.logRef = true;
+				if ((t == "-") || (t == "d"))
+					encoder.logDiffEnc = true;
+				if ((t == "-") || (t == "a"))
+					encoder.logArray = true;
+				if ((t == "-") || (t == "w"))
+					encoder.logWrite = true;
+			}
+
 		};
 
 	// Bundle writing sequence
@@ -156,6 +196,7 @@ requirejs(["require", "three", "js/binary_encoder", "three-bundles"], function(r
 				applyFlags(encoder);
 				encoder.setDatabase( ThreeBundles.database );
 				for (var i=0; i<bundleTextures.length; i++) {
+					console.info("Encoding".gray,bundleTextures[i][1].cyan.dim);
 					encoder.encode( bundleTextures[i][0], bundleTextures[i][1] );
 				}
 				encoder.close();
@@ -170,6 +211,7 @@ requirejs(["require", "three", "js/binary_encoder", "three-bundles"], function(r
 				applyFlags(encoder);
 				encoder.setDatabase( ThreeBundles.database );
 				for (var i=0; i<bundleMaterials.length; i++) {
+					console.info("Encoding".gray,bundleMaterials[i][1].cyan.dim);
 					encoder.encode( bundleMaterials[i][0], bundleMaterials[i][1] );
 				}
 				encoder.close();
@@ -184,9 +226,11 @@ requirejs(["require", "three", "js/binary_encoder", "three-bundles"], function(r
 				applyFlags(encoder);
 				encoder.setDatabase( ThreeBundles.database );
 				for (var i=0; i<bundleGeometries.length; i++) {
+					console.info("Encoding".gray,bundleGeometries[i][1].cyan.dim);
 					encoder.encode( bundleGeometries[i][0], bundleGeometries[i][1] );
 				}
 				for (var i=0; i<bundleMeshes.length; i++) {
+					console.info("Encoding".gray,bundleMeshes[i][1].cyan.dim);
 					encoder.encode( bundleMeshes[i][0], bundleMeshes[i][1] );
 				}
 				encoder.close();
@@ -201,9 +245,11 @@ requirejs(["require", "three", "js/binary_encoder", "three-bundles"], function(r
 			applyFlags(encoder);
 			encoder.setDatabase( ThreeBundles.database );
 			for (var i=0; i<bundleObjects.length; i++) {
+				console.info("Encoding".gray,bundleObjects[i][1].cyan.dim);
 				encoder.encode( bundleObjects[i][0], bundleObjects[i][1] );
 			}
 			for (var i=0; i<bundleOthers.length; i++) {
+				console.info("Encoding".gray,bundleOthers[i][1].cyan.dim);
 				encoder.encode( bundleOthers[i][0], bundleOthers[i][1] );
 			}
 			encoder.close();

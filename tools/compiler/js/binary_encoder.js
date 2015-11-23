@@ -328,8 +328,8 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 	 */
 	var CTRL_OP = {
 		ATTRIB 	: 0x80,		// Attribute
-		EXPORT	: 0xFE, 	// External Export
-		EMBED 	: 0xFC, 	// Embedded resource
+		EXPORT	: 0xF8, 	// External Export
+		EMBED 	: 0xF9, 	// Embedded resource
 	};
 
 	/**
@@ -355,7 +355,7 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 		REPEATED:	0x50,	// Repeated TypedArray
 		DOWNSCALED:	0x60,	// Downscaled TypedArray
 		SHORT:		0x70,	// Short TypedArray (0-255)
-		FLAG:		0x78,	// A flag when processing a primitive array
+		PRIM_FLAG:	0x78,	// A flag when processing a primitive array
 		PRIMITIVE:	0x7C,	// Primitive Array
 		EMPTY:		0x7E,	// Empty Array
 	};
@@ -403,12 +403,12 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 	 * String representation of numerical type for debug messages
 	 */
 	var _NUMTYPE = [
-		'INT8',
 		'UINT8',
-		'INT16',
+		'INT8',
 		'UINT16',
-		'INT32',
+		'INT16',
 		'UINT32',
+		'INT32',
 		'FLOAT32',
 		'FLOAT64',
 		'UNKNOWN',
@@ -484,9 +484,9 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 			return new Buffer(arr.buffer);
 		},
 		packByNumType = [
-			pack1b, function(v) { pack1b(v, true) },
-			pack2b, function(v) { pack2b(v, true) },
-			pack4b, function(v) { pack4b(v, true) },
+			pack1b, function(v) { return pack1b(v, true) },
+			pack2b, function(v) { return pack2b(v, true) },
+			pack4b, function(v) { return pack4b(v, true) },
 			pack4f, pack8f
 		];
 
@@ -546,6 +546,10 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 		 * Write a number using the compile function
 		 */
 		'write': function( buffer ) {
+			var bits = String(this.__alignSize*8);
+			if (bits.length == 1) bits=" "+bits;
+			console.log((bits+"b ").yellow+("@"+this.offset/this.__alignSize).bold.yellow+": "+util.inspect(buffer));
+
 			this.__writeChunks.push( buffer );
 			this.offset += buffer.length;
 			this.__sync();
@@ -1102,7 +1106,7 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 	 */
 	function encodeNumArrayHeader( encoder, array, op ) {
 		// Write header
-		if (op == ARR_OP.SHORT) { // 8-bit length prefix
+		if ((op & 0xF8) == ARR_OP.SHORT) { // 8-bit length prefix
 			encoder.stream8.write( pack1b( op ) );
 			encoder.stream8.write( pack1b( array.length, false ) );
 		} else if (array.length < 65536) { // 16-bit length prefix
@@ -1136,38 +1140,44 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 	 *
 	 */
 	function chunkForwardAnalysis( array, start ) {
-		var last_v = array[i], rep_val = 0, rep_typ = 0,
+		var last_v = array[start], rep_val = 0, rep_typ = 0,
 			last_t = getNumType( last_v );
+
+		console.log(("-- CFWA BEGIN ofs="+start).red);
+		console.log(("-- CFWA last_t="+last_t+", last_v="+last_v).red);
 
 		// Analyze array			
 		for (var i=start+1; i<array.length; i++) {
-			var v = array[i], break_candidate = false;
+			var v = array[i], break_candidate = true;
 
-			// Isolate items of same value
+			// Check for same value
 			if (v === last_v) {
-				rep_val++;
-				if (rep_val == 255) break_candidate = true;
-			} else if (rep_val > 0) {
-				break_candidate = true;
+				// We are not breaking
+				break_candidate = false;
+				// Increment up to 255
+				if (++rep_val == 255) break;
 			}
 
-			// Isolate items of same type
+			// Check for same type
 			var t = getNumType( v );
-			if ((t != NUMTYPE.NAN) && (last_t != NUMTYPE.NAN)) {
-				if (t === last_t) {
-					rep_typ++;
-					if (rep_typ == 255) break_candidate = true;
-				} else if (rep_typ > 0) {
-					break_candidate = true;
+			console.log(("-- CFWA array["+i+"]="+v+", t="+t).red);
+			if (last_t != NUMTYPE.NAN) { // Check for numeric type repetition only
+				if (t <= last_t) {
+					// Make sure we are not mixing floats with integers
+					if ((last_t >= NUMTYPE.FLOAT32) && (t < NUMTYPE.FLOAT32)) break;
+					// We are not breaking
+					break_candidate = false;
+					// Increment up to 255
+					if (++rep_typ == 255) break;
 				}
 			}
 
 			// Break if we have a break candidate
 			if (break_candidate) break;
-			if (last_t !== NUMTYPE.NAN) last_t = t;
-			last_v = v; 
 
 		}
+
+		console.log(("-- CFWA ofs="+start+", rep_typ="+rep_typ+", rep_val="+rep_val).red);
 
 		// Return appropriate chunk
 		if ((rep_val == 0) && (rep_typ ==0)) {
@@ -1176,9 +1186,9 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 
 		} else if ((rep_val == 0) && (rep_typ > 0)) {
 			// We have repeated type (numeric)
-			return [ ARR_CHUNK.NUMERIC, rep_val+1, last_t ];
+			return [ ARR_CHUNK.NUMERIC, rep_typ+1, last_t ];
 
-		} else if ((rep_typ > 0) && (rep_typ == 0)) {
+		} else if ((rep_val > 0) && (rep_typ == 0)) {
 			// We have repeated type
 			return [ ARR_CHUNK.REPEAT, rep_val+1, last_t ];
 
@@ -1203,7 +1213,7 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 		var arrOp = numAnalysis[0], arrType = numAnalysis[1], floatScale = numAnalysis[2] || 0, stream;
 
 		// Write header & array
-		encodeNumArrayHeader( encoder, data, arrOp | ((floatScale & 0x3) << 4) );
+		encodeNumArrayHeader( encoder, data, arrOp | arrType | ((floatScale & 0x3) << 4) );
 		switch (arrOp) {
 
 			// Write a downscaled array
@@ -1211,7 +1221,7 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 				encoder.log("ARR", "downscaled, from="+_NUMTYPE[NUMTYPE_DOWNSCALE.FROM[arrType]]+", to="+_NUMTYPE[NUMTYPE_DOWNSCALE.TO_DWS[arrType]]+", len="+data.length);
 				pickStream( encoder, arrType, FOR_DWS_TO)
 					.write( packTypedArray( convertArray(data, NUMTYPE_DOWNSCALE.TO_DWS[arrType] ) ) );
-				return;
+				break;
 
 			// Write a delta-encoded array
 			case ARR_OP.DELTA:
@@ -1238,7 +1248,7 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 					pickStream( encoder, arrType, FOR_DELTA_TO)
 						.write( packTypedArray( deltaEncodeIntegers(data) ) );
 				}
-				return;
+				break;
 
 			// An array of repeated single number
 			case ARR_OP.REPEATED:
@@ -1247,7 +1257,7 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 				encoder.log("ARR", "repeated, type="+_NUMTYPE[arrType]+", value="+data[0]+", len="+data.length);
 				pickStream( encoder, arrType )
 					.write( packByNumType[arrType]( data[0] ) );
-				return;
+				break;
 
 			// Raw typed array
 			case ARR_OP.RAW:
@@ -1256,16 +1266,16 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 				encoder.log("ARR", "raw, type="+_NUMTYPE[arrType]+", len="+data.length);
 				pickStream( encoder, arrType )
 					.write( packTypedArray( convertArray(data, arrType) ) );
-				return;
+				break;
 
 			// A short array
 			case ARR_OP.SHORT:
 
 				// Write index
-				encoder.log("ARR", "short, type="+_NUMTYPE[arrType]+", len="+data.length);
+				encoder.log("ARR", "short, type="+_NUMTYPE[arrType]+", len="+data.length+", data="+data);
 				pickStream( encoder, arrType )
 					.write( packTypedArray( convertArray(data, arrType) ) );
-				return;
+				break;
 
 		}
 
@@ -1301,13 +1311,15 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 
 		// If not numeric, process array in chunks of up to 255 items
 		// that share a characteristic
-		encoder.log("ARR", "chunked, len="+data.length+", [");
+		encoder.log("ARR", "primitive, len="+data.length+", [");
+		encoder.logIndent(1);
 
 		// Write header & array
 		encodeNumArrayHeader( encoder, data, ARR_OP.PRIMITIVE );
 
 		// Write chunks with forward analysis
 		for (var i=0, llen=data.length; i<llen;) {
+			encoder.log("---", "Item "+i);
 
 			// Forward chunk analysis
 			var chunk = chunkForwardAnalysis( data, i ),
@@ -1318,25 +1330,27 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 				case ARR_CHUNK.REPEAT:
 
 					// Write header
-					encoder.stream8.write( pack1b( ARR_OP.CHUNK | ARR_CHUNK.REPEAT ) );
+					encoder.stream8.write( pack1b( ARR_OP.PRIM_FLAG | ARR_CHUNK.REPEAT ) );
 					encoder.stream8.write( pack1b( chunkSize ) );
 
 					// Write the repeated primitive
-					encoder.log("ARR", "- repeated x"+chunkSize);
+					encoder.log("CHU", "repeated x"+chunkSize);
 					encodePrimitive( encoder, data[i] );
 					break;
 
 				case ARR_CHUNK.NUMERIC:
 
 					// Write header
-					encoder.stream8.write( pack1b( ARR_OP.CHUNK | ARR_CHUNK.NUMERIC ) );
+					console.log(">>> NUM INDICATOR");
+					encoder.stream8.write( pack1b( ARR_OP.PRIM_FLAG | ARR_CHUNK.NUMERIC ) );
+					console.log("<<<");
 
 					// Write the numeric array
-					encoder.log("ARR", "- numeric x"+chunkSize+", type="+_NUMTYPE[chunkNumType]);
+					encoder.log("CHU", "numeric x"+chunkSize+", type="+_NUMTYPE[chunkNumType]);
 					if (!encodeNumArray(encoder, data.slice(i, i+chunkSize))) {
 						throw {
 							'name' 		: 'AssertError',
-							'message'	: 'Identified numeric chunk but numeric analysis failed!',
+							'message'	: 'Forward analysis reported numeric chunk but numeric encoding failed! Data:'+util.inspect(data.slice(i, i+chunkSize)),
 							toString 	: function(){return this.name + ": " + this.message;}
 						}
 					}
@@ -1345,7 +1359,7 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 				case ARR_CHUNK.PRIMITIVE:
 
 					// Write the actual primitive
-					encoder.log("ARR", "- primitive x"+chunkSize);
+					encoder.log("CHU", "primitive x"+chunkSize);
 					encodePrimitive( encoder, data[i] );
 					break;
 
@@ -1355,6 +1369,8 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 			i += chunkSize;
 
 		}
+
+		encoder.logIndent(-1);
 		encoder.log("ARR", "]");
 
 	}
@@ -1451,6 +1467,7 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 			lo = (id & 0xFFFF)
 
 		// Write opcode splitted inti 8-bit and 16-bit 
+		encoder.log("IRF", "iref="+id);
 		encoder.stream8.write( pack1b( PRIM_OP.REF | hi, false ) );
 		encoder.stream16.write( pack2b( lo, false ) );
 
@@ -1559,8 +1576,10 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 			// Write entity opcode
 			encoder.stream8.write( pack1b( PRIM_OP.OBJECT | 0x30 ) );
 
-			// Write entity length
-			encoder.stream16.write( pack2b( o_keys.length ) );
+			// Write values
+			var values = [];
+			for (var i=0, len=o_keys.length; i<len; i++) values.push( object[o_keys[i]] );
+			encodeArray( encoder, values );
 
 			// Write key IDs
 			for (var i=0, len=o_keys.length; i<len; i++)
@@ -1576,12 +1595,12 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 			encoder.stream8.write( pack1b( PRIM_OP.OBJECT | 0x20 | sid_hi ) );
 			encoder.stream8.write( pack1b( sid_lo ) );
 
-		}
+			// Write values
+			var values = [];
+			for (var i=0, len=o_keys.length; i<len; i++) values.push( object[o_keys[i]] );
+			encodeArray( encoder, values );
 
-		// Write values
-		var values = [];
-		for (var i=0, len=o_keys.length; i<len; i++) values.push( object[o_keys[i]] );
-		encodeArray( encoder, values );
+		}
 
 	}
 
@@ -1643,7 +1662,7 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 				}
 
 				// Write header
-				encoder.log("PRM", "number, n="+data);
+				encoder.log("PRM", "number, type="+_NUMTYPE[numType]+", n="+data);
 				encoder.stream8.write( pack1b( PRIM_OP.NUMBER | numType ) );
 
 				// Write data
@@ -1784,6 +1803,9 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 		this.plainObjectSignatureID = 0;
 		this.plainObjectSignatureLookup = {};
 
+		// Debug
+		this.logPrefix = "";
+
 	}
 
 	/**
@@ -1837,10 +1859,10 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 			finalStream.close();
 
 			// Close and delete helper stream objects
-			this.stream8.close();  fs.unlink( this.filename + '_b8.tmp' );
-			this.stream16.close(); fs.unlink( this.filename + '_b16.tmp' );
-			this.stream32.close(); fs.unlink( this.filename + '_b32.tmp' );
-			this.stream64.close(); fs.unlink( this.filename + '_b64.tmp' );
+			// this.stream8.close();  fs.unlink( this.filename + '_b8.tmp' );
+			// this.stream16.close(); fs.unlink( this.filename + '_b16.tmp' );
+			// this.stream32.close(); fs.unlink( this.filename + '_b32.tmp' );
+			// this.stream64.close(); fs.unlink( this.filename + '_b64.tmp' );
 
 		},
 
@@ -1995,8 +2017,20 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 		 * Logging function
 		 */
 		'log': function(subsystem, text) {
-			return;
-			console.log(subsystem.blue + (" @"+this.stream8.offset).bold.blue + ": " + text );
+			// return;
+			console.log(subsystem.blue + (" @"+this.stream8.offset).bold.blue + ":" + this.logPrefix + " " + text );
+		},
+
+		/**
+		 * Log identation modification
+		 */
+		'logIndent': function(indent, c) {
+			var iChar = c || "+";
+			if (indent > 0) {
+				for (var i=0; i<indent; i++) this.logPrefix+=iChar;
+			} else {
+				this.logPrefix = this.logPrefix.substr(0,this.logPrefix.length+indent*iChar.length);
+			}
 		}
 
 	};

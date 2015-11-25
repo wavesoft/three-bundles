@@ -38,14 +38,18 @@ var opt = require('node-getopt').create([
   "\n" +
   "Logging Flags:\n" +
   "\n" +
-  "  t                        Log import/export tag opcodes\n" +
   "  p                        Log primitive opcodes\n" +
-  "  c                        Log compacting opcodes\n" +
-  "  e                        Log entity opcodes\n" +
-  "  l                        Log alignment opcodes\n" +
-  "  r                        Log internal cross-reference opcodes\n" +
-  "  d                        Log differential encoding array opcodes\n" +
-  "  a                        Log array optices\n" +
+  "  a                        Log array opcodes\n" +
+  "  c                        Log array chunk opcodes\n" +
+  "  b                        Log array bulk operations opcodes\n" +
+  "  s                        Log string opcodes\n" +
+  "  r                        Log internal cross-reference\n" +
+  "  R                        Log external cross-reference\n" +
+  "  o                        Log object opcodes\n" +
+  "  e                        Log file embedding opcodes\n" +
+  "  o                        Log object opcodes\n" +
+  "  O                        Log plain object opcodes\n" +
+  "  d                        Log protocol debug operations\n" +
   "  w                        Log low-level byte writes\n" +
   "  -                        Log everything\n" +
   "\n" +
@@ -155,27 +159,26 @@ requirejs(["require", "three", "js/binary_encoder", "three-bundles"], function(r
 			}
 
 			// Apply logging flags
+			var logFlags = 0;
 			for (var i=0; i<logTags.length; i++) {
 				var t = logTags[i];
-				if ((t == "-") || (t == "t"))
-					encoder.logTag = true;
-				if ((t == "-") || (t == "p"))
-					encoder.logPrimitive = true;
-				if ((t == "-") || (t == "c"))
-					encoder.logCompact = true;
-				if ((t == "-") || (t == "e"))
-					encoder.logEntity = true;
-				if ((t == "-") || (t == "l"))
-					encoder.logAlign = true;
-				if ((t == "-") || (t == "r"))
-					encoder.logRef = true;
-				if ((t == "-") || (t == "d"))
-					encoder.logDiffEnc = true;
-				if ((t == "-") || (t == "a"))
-					encoder.logArray = true;
-				if ((t == "-") || (t == "w"))
-					encoder.logWrite = true;
+				switch (t) {
+					case 'p': logFlags |= BinaryEncoder.LogFlags.PRM; break;
+					case 'a': logFlags |= BinaryEncoder.LogFlags.ARR; break;
+					case 'c': logFlags |= BinaryEncoder.LogFlags.CHU; break;
+					case 's': logFlags |= BinaryEncoder.LogFlags.STR; break;
+					case 'r': logFlags |= BinaryEncoder.LogFlags.IREF; break;
+					case 'R': logFlags |= BinaryEncoder.LogFlags.XREF; break;
+					case 'o': logFlags |= BinaryEncoder.LogFlags.OBJ; break;
+					case 'e': logFlags |= BinaryEncoder.LogFlags.EMB; break;
+					case 'O': logFlags |= BinaryEncoder.LogFlags.PLO; break;
+					case 'b': logFlags |= BinaryEncoder.LogFlags.BULK; break;
+					case 'd': logFlags |= BinaryEncoder.LogFlags.PDBG; break;
+					case 'w': logFlags |= BinaryEncoder.LogFlags.WRT; break;
+					case '-': logFlags |= 0xffff; break;
+				}
 			}
+			encoder.setLogFlags( logFlags );
 
 		};
 

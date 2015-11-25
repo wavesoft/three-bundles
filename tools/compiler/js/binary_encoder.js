@@ -82,10 +82,29 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 		STR: 	0x0008, // String buffer
 		IREF: 	0x0010, // Internal reference
 		XREF: 	0x0020, // External reference
-		PRM: 	0x0040, // Primitive messages
-		OBJ: 	0x0080, // Object messages
-		EMB: 	0x0100, // Embedded resource
+		OBJ: 	0x0040, // Object messages
+		EMB: 	0x0080, // Embedded resource
+		PLO: 	0x0100, // Simple objects
+		BULK: 	0x0200, // Bulk-encoded objects
+		WRT: 	0x4000, // Debug writes
 		PDBG: 	0x8000, // Protocol debug messages
+	};
+
+	/**
+	 * Log prefix chunks
+	 */
+	var LOG_PREFIX_STR = {
+		0x0001 	: 'PRM',
+		0x0002 	: 'ARR',
+		0x0004 	: 'CHU',
+		0x0008 	: 'STR',
+		0x0010 	: 'IRF',
+		0x0020 	: 'XRF',
+		0x0040 	: 'OBJ',
+		0x0080	: 'EMB',
+		0x0100  : 'PLO',
+		0x0200  : 'BLK',
+		0x8000 	: 'DBG',
 	};
 
 	/**
@@ -383,7 +402,7 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 		// For protocol use
 		REPEAT: 	0, 	// Repeat the next primitive 1-254 times
 		NUMERIC: 	1, 	// There are 1-254 consecutive numerical items
-		BULK_OBJ:	2,	// A bulk of many objects of same type
+		BULK_PLAIN:	2,	// A bulk of many objects of same type
 		// For internal use
 		PRIMITIVE: 	4, 	// No chunking available, encode individual primitive
 		PRIM_IREF:  5, 	// Internal reference primitive (speed optimisation)
@@ -1150,14 +1169,14 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 			encoder.stream8.write( pack1b( op ) );
 			encoder.stream8.write( pack1b( array.length, false ) );
 			encoder.counters.arr_hdr+=2;
-		// } else if (array.length < 65536) { // 16-bit length prefix
-		// 	encoder.stream8.write( pack1b( op ) );
-		// 	encoder.stream16.write( pack2b( array.length, false ) );
-		// 	encoder.counters.arr_hdr+=3;
-		} else if (array.length < 256) { // 16-bit length prefix
+		} else if (array.length < 65536) { // 16-bit length prefix
 			encoder.stream8.write( pack1b( op ) );
-			encoder.stream8.write( pack1b( array.length, false ) );
-			encoder.counters.arr_hdr+=2;
+			encoder.stream16.write( pack2b( array.length, false ) );
+			encoder.counters.arr_hdr+=3;
+		// } else if (array.length < 256) { // 16-bit length prefix
+		// 	encoder.stream8.write( pack1b( op ) );
+		// 	encoder.stream8.write( pack1b( array.length, false ) );
+		// 	encoder.counters.arr_hdr+=2;
 		} else if (array.length < 4294967296) { // 32-bit length prefix
 			encoder.stream8.write( pack1b( op | 0x08 ) );
 			encoder.stream32.write( pack4b( array.length, false ) );
@@ -1191,48 +1210,15 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 	function chunkForwardAnalysis( encoder, array, start, enableBulkDetection ) {
 		var last_v = array[start], rep_val = 0,
 			last_t = getNumType( last_v ), rep_typ = 0,
-			last_c = null, rep_const = 0, const_eid = -1,
+			plain_rep = 0, plain_keys = [],
 			ref_list = [];
 
 		// console.log(("-- CFWA BEGIN ofs="+start).red);
 		// console.log(("-- CFWA last_t="+last_t+", last_v="+last_v).red);
 
-		// Populate first constructor if non numeric
-		if (enableBulkDetection && (typeof last_v != "number")) {
-
-			// Check ByRef internally
-			var id = encoder.lookupIRef( last_v );
-			if (id > -1) { return [ ARR_CHUNK.PRIM_IREF, 1, id ]; }
-
-			// Check ByRef externally
-			id = encoder.lookupXRef( last_v );
-			if (id > -1) { return [ ARR_CHUNK.PRIM_XREF, 1, id ] }
-
-			// Lookup entity ID
-			var ENTITIES = encoder.objectTable.ENTITIES;
-			for (var i=0, len=ENTITIES.length; i<len; i++)
-				if ((ENTITIES[i].length > 0) && (last_v instanceof ENTITIES[i][0]))
-					{ const_eid = i; break; }
-
-			// We don't know this object type
-			if (const_eid < 0) {
-				last_c = null;
-			} else {
-				last_c = ENTITIES[const_eid][0];
-
-				// Populate property table
-				var	PROPERTIES = encoder.objectTable.PROPERTIES[const_eid],
-					propertyTable = new Array( PROPERTIES.length );
-				for (var i=0, len=PROPERTIES.length; i<len; i++) {
-					propertyTable[i] = last_v[ PROPERTIES[i] ];
-				}
-
-				// Check ByVal ref
-				id = encoder.lookupIVal( propertyTable, const_eid );
-				if (id > -1) { return [ ARR_CHUNK.PRIM_IREF, 1, id ] }
-
-			}
-
+		// Prepare signature 
+		if (enableBulkDetection && (last_v != null) && (last_v.constructor === ({}).constructor)) {
+			plain_keys = Object.keys( last_v );
 		}
 
 		// Analyze array			
@@ -1264,14 +1250,26 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 					}
 				}
 
-			} else if (enableBulkDetection && (last_c != null)) {
+			} else if (enableBulkDetection && break_candidate && (v != null) && (v.constructor === ({}).constructor)) {
 
-				// Check for same constructor
-				if (v instanceof last_c) {
+				// Check if signature is still the same
+				var v_keys = Object.keys(v), new_keys = [];
+				for (var i=0, llen=v_keys.length; i<llen; i++) {
+
+					// Inject new keys (and count them)
+					if (plain_keys.indexOf(v_keys[i]) < 0)
+						new_keys.push( v_keys[i] );
+
+				}
+
+				// Break if we have added more than 25% of the original
+				if (new_keys.length < plain_keys.length * 0.25) {
+					// Merge new keys
+					plain_keys = plain_keys.concat( new_keys );
 					// We are not breaking
 					break_candidate = false;
-					// Increment constructor up to 65535
-					if (++rep_const == 65535) break;
+					// Increment up to 65535
+					if (++plain_rep == 65535) break;
 				}
 
 			}
@@ -1284,9 +1282,9 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 		// console.log(("-- CFWA ofs="+start+", rep_typ="+rep_typ+", rep_val="+rep_val).red);
 
 		// Return appropriate chunk
-		if ((rep_const > 0) && (rep_val == 0)) {
-			// Multiple same constructors are bulked
-			return [ ARR_CHUNK.BULK_OBJ, rep_const+1, const_eid ];
+		if ((plain_rep > 0) && (rep_val == 0)) {
+			// Multiple plain objects are bulked
+			return [ ARR_CHUNK.BULK_PLAIN, plain_rep+1, plain_keys ];
 
 		} else if ((rep_val == 0) && (rep_typ ==0)) {
 			// Do not use chunks, rather use a single primitive for representing zero value
@@ -1432,6 +1430,58 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 	}
 
 	/**
+	 * Encode a bulk of plain objects with weaved properties
+	 */
+	function encodePlainBulkArray_v1( encoder, entities, properties ) {
+
+		// Weave all properties
+		var props = [], pl = properties.length;
+		for (var i=0, il=entities.length; i<il; i++)
+			for (var j=0; j<pl; j++)
+				props.push( entities[i][properties[j]] );
+
+		// Write down the keys
+		encoder.stream8.write( pack1b( pl , false ) );
+		for (var i=0; i<pl; i++)
+			encoder.stream16.write( pack2b( encoder.stringID(properties[i]) ) );
+
+		// Encode array
+		encoder.log( LOG.BULK, "Bulk len="+entities.length+", signature="+properties.join("+") );
+		encodePrimitive( encoder, props );
+
+	}
+
+
+	/**
+	 * Encode a bulk of plain objects with weaved properties
+	 */
+	function encodePlainBulkArray( encoder, entities, properties ) {
+
+		// Write down the keys
+		encoder.stream8.write( pack1b( pl , false ) );
+		for (var i=0; i<pl; i++)
+			encoder.stream16.write( pack2b( encoder.stringID(properties[i]) ) );
+
+		// Encode array
+		encoder.log( LOG.BULK, "Bulk len="+entities.length+", signature="+properties.join("+") );
+
+		// Write bulked properties
+		for (var i=0, pl=properties.length; i<pl; i++) {
+
+			// Read property of all entities
+			var prop = [], p = properties[i];
+			for (var j=0, el=entities.length; j<el; j++) {
+				prop.push( entities[j][p] );
+			}
+
+			// Write optimised properties of all entities
+			encodeArray( encoder, prop );
+
+		}
+
+	}
+
+	/**
 	 * Encode the specified array
 	 */
 	function encodeArray( encoder, data ) {
@@ -1469,7 +1519,7 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 		for (var i=0, llen=data.length; i<llen;) {
 
 			// Forward chunk analysis
-			var chunk = chunkForwardAnalysis( encoder, data, i, false ),
+			var chunk = chunkForwardAnalysis( encoder, data, i, true ),
 				chunkType = chunk[0], chunkSize = chunk[1], chunkSubType = chunk[2];
 
 			// Handle chunk data
@@ -1503,17 +1553,15 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 					}					
 					break;
 
-				case ARR_CHUNK.BULK_OBJ:
+				case ARR_CHUNK.BULK_PLAIN:
 
 					// Write header
-					encoder.log(LOG.CHU, "bulk x"+chunkSize+", eid="+chunkSubType);
-					encoder.stream8.write( pack1b( ARR_OP.PRIM_FLAG | ARR_CHUNK.BULK_OBJ ) );
+					encoder.log(LOG.CHU, "bulk x"+chunkSize+", signature="+chunkSubType.join("+"));
+					encoder.stream8.write( pack1b( ARR_OP.PRIM_FLAG | ARR_CHUNK.BULK_PLAIN ) );
 					encoder.stream16.write( pack2b( chunkSize, false ) );
 					encoder.counters.arr_chu+=3;
 
-					// Encode bulk chunk
-					encodeBulkArray( encoder, data.slice(i, i+chunkSize), chunkSubType );
-
+					encodePlainBulkArray( encoder, data.slice(i, i+chunkSize), chunkSubType );
 					break;
 
 				case ARR_CHUNK.PRIM_IREF:
@@ -1753,20 +1801,23 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 			signature = o_keys.join("+"),
 			sid = encoder.getSignatureID( signature );
 
+		// Prepare values
+		var values = [];
+		for (var i=0, len=o_keys.length; i<len; i++) values.push( object[o_keys[i]] );
+
 		// If not found, allocate new
 		if (sid === undefined) {
 
 			// Register signature
-			encoder.defineSignature( signature );
+			sid = encoder.defineSignature( signature );
+			encoder.log(LOG.PLO, "plain(new), signature="+signature+", sid="+sid);
 
 			// Write entity opcode
 			encoder.stream8.write( pack1b( PRIM_OP.OBJECT | 0x30 ) );
 			encoder.counters.op_prm+=1;
 
-			// Write values
-			var values = [];
-			for (var i=0, len=o_keys.length; i<len; i++) values.push( object[o_keys[i]] );
-			encodeArray( encoder, values );
+			// Write length
+			encoder.stream16.write( pack2b( o_keys.length, false ) );
 
 			// Write key IDs
 			for (var i=0, len=o_keys.length; i<len; i++)
@@ -1774,6 +1825,8 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 			encoder.counters.ref_str += o_keys.length * 2;
 
 		} else {
+
+			encoder.log(LOG.PLO, "plain["+sid+"], signature="+signature+", sid="+sid);
 
 			// Split entity ID in a 12-bit number
 			var sid_hi = (sid & 0xF00) >> 8,
@@ -1784,12 +1837,10 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 			encoder.stream8.write( pack1b( sid_lo ) );
 			encoder.counters.op_prm+=2;
 
-			// Write values
-			var values = [];
-			for (var i=0, len=o_keys.length; i<len; i++) values.push( object[o_keys[i]] );
-			encodeArray( encoder, values );
-
 		}
+
+		// Keep iref and encode
+		encodeArray( encoder, values );
 
 	}
 
@@ -1953,28 +2004,28 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 	 */
 	var BinaryEncoder = function( filename, config ) {
 
+		// Setup config
+		this.config = config || {};
+
+		// Debug
+		this.logPrefix = "";
+		this.logFlags = this.config['log'] || 0x00;
+
 		// Open parallel streams in order to avoid memory exhaustion.
 		// The final file is assembled from these chunks
 		this.filename = filename;
-		this.stream64 = new BinaryStream( filename + '_b64.tmp', 8, false );
-		this.stream32 = new BinaryStream( filename + '_b32.tmp', 4, false );
-		this.stream16 = new BinaryStream( filename + '_b16.tmp', 2, false );
-		this.stream8  = new BinaryStream( filename + '_b8.tmp' , 1, false );
+		this.stream64 = new BinaryStream( filename + '_b64.tmp', 8, ((this.logFlags & LOG.WRT) != 0) );
+		this.stream32 = new BinaryStream( filename + '_b32.tmp', 4, ((this.logFlags & LOG.WRT) != 0) );
+		this.stream16 = new BinaryStream( filename + '_b16.tmp', 2, ((this.logFlags & LOG.WRT) != 0) );
+		this.stream8  = new BinaryStream( filename + '_b8.tmp' , 1, ((this.logFlags & LOG.WRT) != 0) );
 
 		// Counters for optimising the protocol
 		this.counters = {
-			op_ctr: 0,
-			op_prm: 0,
-			ref_str: 0,
-			arr_hdr: 0,
-			arr_chu: 0,
-			dat_hdr: 0,
-			op_iref: 0,
-			op_xref: 0,
+			op_ctr:  0, arr_chu: 0,
+			op_prm:  0, dat_hdr: 0,
+			ref_str: 0, op_iref: 0,
+			arr_hdr: 0, op_xref: 0,
 		};
-
-		// Keep rest of configuration
-		this.config = config || {};
 
 		// Get base dir
 		this.baseDir = this.config['base_dir'] || false;
@@ -2010,10 +2061,6 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 		this.plainObjectSignatureID = 0;
 		this.plainObjectSignatureLookup = {};
 
-		// Debug
-		this.logPrefix = "";
-		this.logFlags = 0x00;
-
 	}
 
 	/**
@@ -2022,11 +2069,6 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 	BinaryEncoder.prototype = {
 
 		'constructor': BinaryEncoder,
-
-		/**
-		 * Expose FileResource class 
-		 */
-		'FileResource': FileResource,
 
 		/**
 		 * Fuse parallel streams and close
@@ -2043,7 +2085,7 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 			// Open final stream
 			var finalStream = new BinaryStream( this.filename, 8 );
 			finalStream.write( pack2b( 0x4233 ) );  				 // Magic header
-			finalStream.write( pack2b( this.objectTable ) ); 		 // Object Table ID
+			finalStream.write( pack2b( this.objectTable.ID ) ); 	 // Object Table ID
 			finalStream.write( pack4b( this.stream64.offset ) );     // 64-bit buffer lenght
 			finalStream.write( pack4b( this.stream32.offset ) );     // 32-bit buffer lenght
 			finalStream.write( pack4b( this.stream16.offset ) );     // 16-bit buffer length
@@ -2073,7 +2115,7 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 			this.stream64.close(); fs.unlink( this.filename + '_b64.tmp' );
 
 			// Write protocol overhead table
-			if (this.logFlags & LOG.PDBG != 0) {
+			if ((this.logFlags & LOG.PDBG) != 0) {
 				console.info("-----------------------------------");
 				console.info(" Binary Protocol Overhead Analysis");
 				console.info("-----------------------------------");
@@ -2247,29 +2289,34 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 		},
 
 		/**
+		 * Set log flags
+		 */
+		'setLogFlags': function(flags) {
+
+			// Set log flags
+			this.logFlags = flags;
+
+			// Update flags on streams
+			this.stream64.logWrites = ((this.logFlags & LOG.WRT) != 0);
+			this.stream32.logWrites = ((this.logFlags & LOG.WRT) != 0);
+			this.stream16.logWrites = ((this.logFlags & LOG.WRT) != 0);
+			this.stream8.logWrites  = ((this.logFlags & LOG.WRT) != 0);
+
+		},
+
+		/**
 		 * Logging function
 		 */
 		'log': function(subsystem, text) {
 
 			// Don't log subsystems we don't track
-			if (subsystem & this.logFlags == 0) return;
-
-			// Visual translation of subsystem flag
-			var ss_flag = {
-				0x0001 	: 'PRM' ,
-				0x0002 	: 'ARR' ,
-				0x0004 	: 'CHU' ,
-				0x0008 	: 'STR' ,
-				0x0010 	: 'IREF',
-				0x0020 	: 'XREF',
-				0x0040 	: 'PRM' ,
-				0x0080 	: 'OBJ' ,
-				0x0100	: 'EMB' ,
-				0x8000 	: 'DBG' ,
-			};
+			if ((subsystem & this.logFlags) == 0) return;
 
 			// Log
-			console.log(ss_flag[subsystem].blue + (" @"+this.stream8.offset).bold.blue + ":" + this.logPrefix + " " + text );
+			console.log(
+				LOG_PREFIX_STR[subsystem].blue + 
+				(" @"+this.stream8.offset).bold.blue + ":" + this.logPrefix + " " + text 
+			);
 
 		},
 
@@ -2277,7 +2324,7 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 		 * Log identation modification
 		 */
 		'logIndent': function(indent, c) {
-			var iChar = c || "+";
+			var iChar = c || ">";
 			if (indent > 0) {
 				for (var i=0; i<indent; i++) this.logPrefix+=iChar;
 			} else {
@@ -2287,6 +2334,15 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 
 	};
 
+	/**
+	 * Expose FileResource class 
+	 */
+	BinaryEncoder.FileResource = FileResource;
+
+	/**
+	 * Expose log flags
+	 */
+	BinaryEncoder.LogFlags = LOG;
 
 	/**
 	 * Return binary encoder

@@ -230,7 +230,7 @@ define(["three-bundles/lib/objects"], function(ObjectTable) {
 			// Keep on irefs
 			bundle.iref_table.push( instance );
 			// Fetch property table
-			// console.assert(eid != 3);
+			// console.assert(eid != 50);
 			var prop_table = decodePrimitive( bundle, database );
 
 			// Run initializer
@@ -266,24 +266,24 @@ define(["three-bundles/lib/objects"], function(ObjectTable) {
 			var obj = {};
 			bundle.iref_table.push( obj );
 
-			// Read values
-			var values = decodePrimitive( bundle, database );
-
-			// Read keys & populate object fields
-			var obj = {}, keys = [];
-			for (var i=0, llen=values.length; i<llen; i++) {
-				var k = bundle.readStringLT();
-				keys.push( k );
-				obj[k] = values[i];
-			}
+			// Read length and keys
+			var keys = [], llen = bundle.readTypedNum[ NUMTYPE.UINT16 ]();
+			for (var i=0; i<llen; i++)
+				keys.push( bundle.readStringLT() );
 
 			// Keep signature in signature table
 			bundle.signature_table.push( keys );
 
-			// Return object
+			// Read values
+			var values = decodePrimitive( bundle, database );
+
+			// Create object
+			for (var i=0, llen=keys.length; i<llen; i++)
+				obj[keys[i]] = values[i];
 			return obj;
 
 		}
+
 	}
 
 	/**

@@ -230,7 +230,7 @@ define(["three-bundles/lib/objects"], function(ObjectTable) {
 			// Keep on irefs
 			bundle.iref_table.push( instance );
 			// Fetch property table
-			console.assert(eid != 3);
+			// console.assert(eid != 3);
 			var prop_table = decodePrimitive( bundle, database );
 
 			// Run initializer
@@ -315,6 +315,41 @@ define(["three-bundles/lib/objects"], function(ObjectTable) {
 	}
 
 	/**
+	 * Decode bulk array of entities
+	 */
+	function decodeBulkArray( bundle, database, len ) {
+		var eid = bundle.readTypedNum[ NUMTYPE.UINT16 ](),
+			PROPERTIES = bundle.ot.PROPERTIES[ eid ],
+			ENTITY = bundle.ot.ENTITIES[ eid ];
+
+		// Fabricate all objects
+		var ans = [], prop_tables=[];
+		for (var i=0; i<len; i++) {
+			// Call entity factory
+			ans.push( ENTITY[1]( ENTITY[0] ) );
+			prop_tables.push( [] );
+		}
+
+		// Weave-create property tables
+		for (var j=0, pl=PROPERTIES.length; j<pl; j++) {
+			var props = decodePrimitive( bundle, database );
+			for (var i=0; i<len; i++)
+				prop_tables[i].push( props[i] );
+		}
+
+		// Run initializers
+		for (var i=0; i<len; i++) {
+			// Run initializers
+			ENTITY[2]( ans[i], PROPERTIES, prop_tables[i] );
+		}
+
+		// Free proprty tables and return objects
+		prop_tables = [];
+		return ans;
+
+	}
+
+	/**
 	 * Decode primitive array
 	 */
 	function decodePrimitiveArray( bundle, database, length ) {
@@ -324,7 +359,7 @@ define(["three-bundles/lib/objects"], function(ObjectTable) {
 		while (size<length) {
 			// Peek on the operator
 			var op = bundle.u8[ bundle.i8 ];
-			if ((op & 0x7C) == 0x78) { // Flag
+			if ((op & 0xFC) == 0x78) { // Primitive Flag
 				// If the next opcode seems like a flag, pop it (otherwise
 				// that's an opcode that defines a primitive)
 				bundle.i8++;
@@ -332,9 +367,22 @@ define(["three-bundles/lib/objects"], function(ObjectTable) {
 				flag = op & 0x03;
 				switch (flag) {
 					case 0: // REPEAT
-						flen = bundle.readTypedNum[ NUMTYPE.UINT8 ](); // Flag_LEN
+						flen = bundle.readTypedNum[ NUMTYPE.UINT8 ]();
 						break;
 					case 1: // NUMERIC
+						break;
+					case 2: // BULK
+						flen = bundle.readTypedNum[ NUMTYPE.UINT16 ](); 
+
+						// This is a special case. We have a bit more complex
+						// parsing mechanism. The next object is NOT primitive
+						// TODO: Perhaps MAKE it primtive?
+						ans = ans.concat( decodeBulkArray( bundle, database, flen ) );
+						size += flen;
+
+						// Reset flag
+						flag = 10;
+
 						break;
 					default:
 						throw {
@@ -356,10 +404,13 @@ define(["three-bundles/lib/objects"], function(ObjectTable) {
 							ans = ans.concat( Array.prototype.slice.call(prim) );
 							size += prim.length;
 							break;
+						case 2: // BULK (Multiple entities with weaved property arrays)
+							break;
+
 					}
-				} else {
 					// Reset flag
 					flag = 10;
+				} else {
 					// Keep primitive
 					ans.push(prim);
 					size += 1;
@@ -384,7 +435,7 @@ define(["three-bundles/lib/objects"], function(ObjectTable) {
 		if ((op & 0x40) == 0x00) { // Delta-Encoded
 			var l = bundle.readTypedNum[ ln3 ](),
 				v0 = bundle.readTypedNum[ NUMTYPE_DOWNSCALE.FROM[typ] ](),
-				vArr = bundle.readTypedArray[ NUMTYPE_DOWNSCALE.TO_DELTA[typ] ]( l );
+				vArr = bundle.readTypedArray[ NUMTYPE_DOWNSCALE.TO_DELTA[typ] ]( l - 1 );
 
 			if (typ < 6) {
 				// Return delta-decoded integer array
@@ -477,7 +528,7 @@ define(["three-bundles/lib/objects"], function(ObjectTable) {
 				(op & 0x07) );
 
 		} else if ((op & 0xF0) == 0xE0) { // I-Ref
-			var id = ((op & 0x0F) << 4) | bundle.readTypedNum[ NUMTYPE.UINT8 ]();
+			var id = ((op & 0x0F) << 16) | bundle.readTypedNum[ NUMTYPE.UINT16 ]();
 			return bundle.iref_table[id];
 
 		} else if ((op & 0xF8) == 0xF0) { // Number
@@ -553,11 +604,21 @@ define(["three-bundles/lib/objects"], function(ObjectTable) {
 		// Read header
 		var header_size = 24;
 		this.magic  	= this.u16[0];
-		this.reserved  	= this.u16[1];
+		this.table_id  	= this.u16[1];
 		this.max64  	= this.u32[1];
 		this.max32 		= this.u32[2];
 		this.max16 		= this.u32[3];
 		this.max8  		= this.u32[4];
+		this.maxST 		= this.u32[5];
+
+		// Validate object table id
+		if (this.table_id != this.ot.ID) {
+			throw {
+				'name' 		: 'DecodingError',
+				'message'	: 'The object table specified does not match the object table in the binary bundle (0x'+this.table_id.toString(16)+')',
+				toString 	: function(){return this.name + ": " + this.message;}
+			}
+		}
 
 		// Setup indices
 		this.i64 = header_size;
@@ -593,8 +654,8 @@ define(["three-bundles/lib/objects"], function(ObjectTable) {
 			if (c == 0) {
 				this.string_table.push(str);
 				str = "";
-				// Break if we reached the end of the table (two consecutive zeros)
-				if (this.u8[i+1] == 0) break;
+				// Break if we reached the end of the table
+				if (this.string_table.length >= this.maxST) break;
 			} else {
 				str += String.fromCharCode(c);
 			}
@@ -612,21 +673,21 @@ define(["three-bundles/lib/objects"], function(ObjectTable) {
 			function() { return scope.f32[scope.i32++]; },
 			function() { return scope.f64[scope.i64++]; },
 		];
-		this.readTypedNum = [
-			function() { var v = scope.u8[scope.i8++];   console.log("8U@",scope.i8-1 -scope.ofs8/1,"=",  v,"[0x"+v.toString(16)+"]");  return v; },
-			function() { var v = scope.s8[scope.i8++];   console.log("8S@",scope.i8-1 -scope.ofs8/1,"=",  v,"[0x"+v.toString(16)+"]");  return v; },
-			function() { var v = scope.u16[scope.i16++]; console.log("16U@",scope.i16-1-scope.ofs16/2,"=",v,"[0x"+v.toString(16)+"]"); return v; },
-			function() { var v = scope.s16[scope.i16++]; console.log("16S@",scope.i16-1-scope.ofs16/2,"=",v,"[0x"+v.toString(16)+"]"); return v; },
-			function() { var v = scope.u32[scope.i32++]; console.log("32U@",scope.i32-1-scope.ofs32/4,"=",v,"[0x"+v.toString(16)+"]"); return v; },
-			function() { var v = scope.s32[scope.i32++]; console.log("32S@",scope.i32-1-scope.ofs32/4,"=",v,"[0x"+v.toString(16)+"]"); return v; },
-			function() { var v = scope.f32[scope.i32++]; console.log("32F@",scope.i32-1-scope.ofs32/4,"=",v,"[0x"+v.toString(16)+"]"); return v; },
-			function() { var v = scope.f64[scope.i64++]; console.log("64F@",scope.i64-1-scope.ofs64/8,"=",v,"[0x"+v.toString(16)+"]"); return v; },
-		];
+		// this.readTypedNum = [
+		// 	function() { var v = scope.u8[scope.i8++];   console.log("8U@",scope.i8-1 -scope.ofs8/1,"=",  v,"[0x"+v.toString(16)+"]");  return v; },
+		// 	function() { var v = scope.s8[scope.i8++];   console.log("8S@",scope.i8-1 -scope.ofs8/1,"=",  v,"[0x"+v.toString(16)+"]");  return v; },
+		// 	function() { var v = scope.u16[scope.i16++]; console.log("16U@",scope.i16-1-scope.ofs16/2,"=",v,"[0x"+v.toString(16)+"]"); return v; },
+		// 	function() { var v = scope.s16[scope.i16++]; console.log("16S@",scope.i16-1-scope.ofs16/2,"=",v,"[0x"+v.toString(16)+"]"); return v; },
+		// 	function() { var v = scope.u32[scope.i32++]; console.log("32U@",scope.i32-1-scope.ofs32/4,"=",v,"[0x"+v.toString(16)+"]"); return v; },
+		// 	function() { var v = scope.s32[scope.i32++]; console.log("32S@",scope.i32-1-scope.ofs32/4,"=",v,"[0x"+v.toString(16)+"]"); return v; },
+		// 	function() { var v = scope.f32[scope.i32++]; console.log("32F@",scope.i32-1-scope.ofs32/4,"=",v,"[0x"+v.toString(16)+"]"); return v; },
+		// 	function() { var v = scope.f64[scope.i64++]; console.log("64F@",scope.i64-1-scope.ofs64/8,"=",v,"[0x"+v.toString(16)+"]"); return v; },
+		// ];
 
 		// Create fast typed array read function
 		this.readTypedArray = [
-			function (l) { var o = scope.ofs8;  scope.i8  += l; return new Uint8Array(buffer, o, l); },
-			function (l) { var o = scope.ofs8;  scope.i8  += l; return new Int8Array(buffer, o, l); },
+			function (l) { var o = scope.i8;  	scope.i8  += l; return new Uint8Array(buffer, o, l); },
+			function (l) { var o = scope.i8;  	scope.i8  += l; return new Int8Array(buffer, o, l); },
 			function (l) { var o = 2*scope.i16; scope.i16 += l; return new Uint16Array(buffer, o, l); },
 			function (l) { var o = 2*scope.i16; scope.i16 += l; return new Int16Array(buffer, o, l); },
 			function (l) { var o = 4*scope.i32; scope.i32 += l; return new Uint32Array(buffer, o, l); },
@@ -750,6 +811,7 @@ define(["three-bundles/lib/objects"], function(ObjectTable) {
 		 * Parse the stack of bundles currently loaded
 		 */
 		'parse': function( onsuccess, onerror ) {
+			console.time( 'BinaryBundle' );
 
 			// Parse everything
 			for (var i=0; i<this.pendingBundleParsers.length; i++) {
@@ -762,6 +824,7 @@ define(["three-bundles/lib/objects"], function(ObjectTable) {
 			// Release parser scope
 			this.pendingBundleParsers = [];
 
+			console.timeEnd( 'BinaryBundle' );
 		}
 
 	};

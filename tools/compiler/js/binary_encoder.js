@@ -73,6 +73,22 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 	};
 
 	/**
+	 * Log flags
+	 */
+	var LOG = {
+		PRM: 	0x0001, // Primitive messages
+		ARR: 	0x0002, // Array messages
+		CHU: 	0x0004, // Array Chunk
+		STR: 	0x0008, // String buffer
+		IREF: 	0x0010, // Internal reference
+		XREF: 	0x0020, // External reference
+		PRM: 	0x0040, // Primitive messages
+		OBJ: 	0x0080, // Object messages
+		EMB: 	0x0100, // Embedded resource
+		PDBG: 	0x8000, // Protocol debug messages
+	};
+
+	/**
 	 * Known MIME Types
 	 *
 	 * NOTE: This is imported from httpd's mime.types, so don't get freaked out
@@ -367,8 +383,11 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 		// For protocol use
 		REPEAT: 	0, 	// Repeat the next primitive 1-254 times
 		NUMERIC: 	1, 	// There are 1-254 consecutive numerical items
+		BULK_OBJ:	2,	// A bulk of many objects of same type
 		// For internal use
 		PRIMITIVE: 	4, 	// No chunking available, encode individual primitive
+		PRIM_IREF:  5, 	// Internal reference primitive (speed optimisation)
+		PRIM_XREF:  6, 	// Internal reference primitive (speed optimisation)
 	};
 
 	/**
@@ -392,8 +411,8 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 	 * Buffer primitive MIME Types
 	 */
 	var PRIM_BUFFER_TYPE = {
-		STRING_UTF8: 	 0,
-		STRING_LATIN: 	 1,
+		STRING_LATIN: 	 0,
+		STRING_UTF8: 	 1,
 		BUF_IMAGE: 		 2,
 		BUF_SCRIPT: 	 3,
 		RESOURCE: 		 7,
@@ -497,11 +516,12 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 	/**
 	 * Binary Stream
 	 */
-	var BinaryStream = function( filename, alignSize ) {
+	var BinaryStream = function( filename, alignSize, logWrites ) {
 
 		// Local properties
 		this.offset = 0;
 		this.blockSize = 1024 * 16;
+		this.logWrites = logWrites;
 
 		// Private properties
 		this.__writeChunks = [];
@@ -546,10 +566,11 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 		 * Write a number using the compile function
 		 */
 		'write': function( buffer ) {
-			var bits = String(this.__alignSize*8);
-			if (bits.length == 1) bits=" "+bits;
-			console.log((bits+"b ").yellow+("@"+this.offset/this.__alignSize).bold.yellow+": "+util.inspect(buffer));
-
+			if (this.logWrites) {
+				var bits = String(this.__alignSize*8);
+				if (bits.length == 1) bits=" "+bits;
+				console.log((bits+"b ").yellow+("@"+this.offset/this.__alignSize).bold.yellow+": "+util.inspect(buffer));
+			}
 			this.__writeChunks.push( buffer );
 			this.offset += buffer.length;
 			this.__sync();
@@ -566,6 +587,8 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 			// Sync
 			this.__sync( true );
 
+			// console.log("THIS".magenta+" "+this.offset+" == "+this.__syncOffset);
+
 			// Start iterating
 			while (offset < otherStream.offset) {
 
@@ -573,6 +596,7 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 				readBytes = Math.min( BLOCK_SIZE, otherStream.offset - offset );
 
 				// Read and write
+				// console.log("MERGE".magenta+" from["+otherStream.__fd+"]="+offset+", to["+this.__fd+"]="+this.offset+", range="+readBytes);
 				fs.readSync( otherStream.__fd, buffer, 0, readBytes, offset );
 				fs.writeSync( this.__fd, buffer, 0, readBytes, this.offset );
 
@@ -606,9 +630,9 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 
 				// Write buffer
 				fs.writeSync( this.__fd, buf, 0, BLOCK_SIZE, this.__syncOffset );
+				this.__syncOffset += BLOCK_SIZE;
 
 				// Check if done
-				this.__syncOffset += BLOCK_SIZE;
 				if (this.__syncOffset >= this.offset) break;
 			}
 
@@ -617,6 +641,7 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 				var buf = Buffer.concat( this.__writeChunks );
 				this.__writeChunks = [];
 
+				// Write whatever remains
 				fs.writeSync( this.__fd, buf, 0, buf.length, this.__syncOffset );
 				this.__syncOffset += buf.length;
 			}
@@ -652,6 +677,20 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 				return multiplier * 32768;
 			}
 		}
+	}
+
+	/**
+	 * Check if the specified object is an empty array
+	 */
+	function isEmptyArray(v) {
+		if ((v instanceof Uint8Array) || (v instanceof Int8Array) ||
+			(v instanceof Uint16Array) || (v instanceof Int16Array) ||
+			(v instanceof Uint32Array) || (v instanceof Int32Array) ||
+			(v instanceof Float32Array) || (v instanceof Float64Array) ||
+			(v instanceof Array) ) {
+			return (v.length == 0);
+		}
+		return false;
 	}
 
 	/**
@@ -790,37 +829,38 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 	 * Calculate the possibility to use delta encoding to downscale
 	 * the array if we have the specified maximum delta
 	 */
-	function analyzeDeltaBounds( deltaMax, precisionOverSize ) {
-		if (deltaMax < 0.01) {
-			// A small enough value to fit in a higher grade numeric
-			if (precisionOverSize) {
-				return [ DELTASCALE.S_R00, NUMTYPE.INT16 ];
-			} else {
-				return [ DELTASCALE.S_R00, NUMTYPE.INT8 ];
+	function analyzeDeltaBounds( min_delta, max_delta, is_float, precisionOverSize ) {
+		if (is_float) {
+
+			if (max_delta < 0.01) { // 0.0 - 0.01 Scale
+				return [ DELTASCALE.S_R00, precisionOverSize ? NUMTYPE.INT16 : NUMTYPE.INT8 ];
+			} else if (max_delta <= 1.0) { // 0.0 - 1.0 scale
+				return [ DELTASCALE.S_R, precisionOverSize ? NUMTYPE.INT16 : NUMTYPE.INT8 ];
+			} else if ((min_delta >= 100.0) && (max_delta <= 32767.0)) { // 100.0 - 32767.0
+				return [ DELTASCALE.S_001, NUMTYPE.INT16 ];
 			}
-		} else if (deltaMax <= 1) {
-			// A value between 0 and 1 
-			if (precisionOverSize) {
-				return [ DELTASCALE.S_R, NUMTYPE.INT16 ];
-			} else {
-				return [ DELTASCALE.S_R, NUMTYPE.INT8 ];
-			}
-		} else if (deltaMax <= 127) {
-			// A value between 0 and INT8 bounds
-			return [ DELTASCALE.S_1, NUMTYPE.INT8 ];
-		} else if ((deltaMax <= 12700) && !precisionOverSize) {
-			// A value between 0 and INT8 bounds scaled down by factor 100  (loosing in precision)
-			return [ DELTASCALE.S_001, NUMTYPE.INT8 ];
-		} else if (deltaMax <= 32767) {
-			// A value between 0 and INT16 bounds
-			return [ DELTASCALE.S_1, NUMTYPE.INT16 ];
-		} else if ((deltaMax <= 3276700) && !precisionOverSize) {
-			// A value between 0 and INT16 bounds scaled down by factor 100 (loosing in precision)
-			return [ DELTASCALE.S_001, NUMTYPE.INT16 ];
+
 		} else {
-			// We can not fit in delta encoding
-			return undefined;
+
+			// We have integer delta, so check 
+			if (max_delta < 127) {
+				// A value between 0 and INT8 bounds
+				return [ DELTASCALE.S_1, NUMTYPE.INT8 ];
+			} else if ((max_delta < 12700) && !precisionOverSize) {
+				// A value between 0 and INT8 bounds scaled down by factor 100  (loosing in precision)
+				return [ DELTASCALE.S_001, NUMTYPE.INT8 ];
+			} else if (max_delta < 32767) {
+				// A value between 0 and INT16 bounds
+				return [ DELTASCALE.S_1, NUMTYPE.INT16 ];
+			} else if ((max_delta < 3276700) && !precisionOverSize) {
+				// A value between 0 and INT16 bounds scaled down by factor 100  (loosing in precision)
+				return [ DELTASCALE.S_001, NUMTYPE.INT16 ];
+			}
+
 		}
+
+		// Nothing found or not efficient to use delta encoding
+		return undefined;
 	}
 
 	/**
@@ -932,7 +972,7 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 		}
 
 		// Check if we can apply delta encoding with better type than the current
-		var delta = analyzeDeltaBounds( max_delta, precisionOverSize );
+		var delta = analyzeDeltaBounds( min_delta, max_delta, is_float, precisionOverSize );
 		if ((delta !== undefined) && (delta[1] < originalType)) {
 
 			// Find a matching delta encoding type
@@ -987,7 +1027,7 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 		for (var i=1; i<array.length; i++) {
 			var v = array[i]; delta[i-1] = l - v; l = v;
 		}
-		return [array[0], delta];
+		return delta;
 	}
 
 	/**
@@ -1109,12 +1149,19 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 		if ((op & 0xF8) == ARR_OP.SHORT) { // 8-bit length prefix
 			encoder.stream8.write( pack1b( op ) );
 			encoder.stream8.write( pack1b( array.length, false ) );
-		} else if (array.length < 65536) { // 16-bit length prefix
+			encoder.counters.arr_hdr+=2;
+		// } else if (array.length < 65536) { // 16-bit length prefix
+		// 	encoder.stream8.write( pack1b( op ) );
+		// 	encoder.stream16.write( pack2b( array.length, false ) );
+		// 	encoder.counters.arr_hdr+=3;
+		} else if (array.length < 256) { // 16-bit length prefix
 			encoder.stream8.write( pack1b( op ) );
-			encoder.stream16.write( pack2b( array.length, false ) );
+			encoder.stream8.write( pack1b( array.length, false ) );
+			encoder.counters.arr_hdr+=2;
 		} else if (array.length < 4294967296) { // 32-bit length prefix
 			encoder.stream8.write( pack1b( op | 0x08 ) );
 			encoder.stream32.write( pack4b( array.length, false ) );
+			encoder.counters.arr_hdr+=5;
 		} else {
 			throw {
 				'name' 		: 'RangeError',
@@ -1134,42 +1181,99 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 	 *   NUM_TYPE,		// The numerical type of the repeated item
 	 * ]
 	 *
+	 * @param {BinaryEncoder} encoder - The encoder to use
 	 * @param {array} array - The source array to analyze
 	 * @param {int} start - The stating index of the analysis
+	 * @param {boolean} enableBulkDetection - Enable the detection of bulk objects
 	 * @return {array} - Returns an array with [ CHUNK_TYPE, LENGTH ]
 	 *
 	 */
-	function chunkForwardAnalysis( array, start ) {
-		var last_v = array[start], rep_val = 0, rep_typ = 0,
-			last_t = getNumType( last_v );
+	function chunkForwardAnalysis( encoder, array, start, enableBulkDetection ) {
+		var last_v = array[start], rep_val = 0,
+			last_t = getNumType( last_v ), rep_typ = 0,
+			last_c = null, rep_const = 0, const_eid = -1,
+			ref_list = [];
 
-		console.log(("-- CFWA BEGIN ofs="+start).red);
-		console.log(("-- CFWA last_t="+last_t+", last_v="+last_v).red);
+		// console.log(("-- CFWA BEGIN ofs="+start).red);
+		// console.log(("-- CFWA last_t="+last_t+", last_v="+last_v).red);
+
+		// Populate first constructor if non numeric
+		if (enableBulkDetection && (typeof last_v != "number")) {
+
+			// Check ByRef internally
+			var id = encoder.lookupIRef( last_v );
+			if (id > -1) { return [ ARR_CHUNK.PRIM_IREF, 1, id ]; }
+
+			// Check ByRef externally
+			id = encoder.lookupXRef( last_v );
+			if (id > -1) { return [ ARR_CHUNK.PRIM_XREF, 1, id ] }
+
+			// Lookup entity ID
+			var ENTITIES = encoder.objectTable.ENTITIES;
+			for (var i=0, len=ENTITIES.length; i<len; i++)
+				if ((ENTITIES[i].length > 0) && (last_v instanceof ENTITIES[i][0]))
+					{ const_eid = i; break; }
+
+			// We don't know this object type
+			if (const_eid < 0) {
+				last_c = null;
+			} else {
+				last_c = ENTITIES[const_eid][0];
+
+				// Populate property table
+				var	PROPERTIES = encoder.objectTable.PROPERTIES[const_eid],
+					propertyTable = new Array( PROPERTIES.length );
+				for (var i=0, len=PROPERTIES.length; i<len; i++) {
+					propertyTable[i] = last_v[ PROPERTIES[i] ];
+				}
+
+				// Check ByVal ref
+				id = encoder.lookupIVal( propertyTable, const_eid );
+				if (id > -1) { return [ ARR_CHUNK.PRIM_IREF, 1, id ] }
+
+			}
+
+		}
 
 		// Analyze array			
 		for (var i=start+1; i<array.length; i++) {
 			var v = array[i], break_candidate = true;
 
 			// Check for same value
-			if (v === last_v) {
+			if ( (v === last_v) || (isEmptyArray(last_v) && isEmptyArray(v)) ) {
 				// We are not breaking
 				break_candidate = false;
 				// Increment up to 255
 				if (++rep_val == 255) break;
 			}
 
-			// Check for same type
-			var t = getNumType( v );
-			console.log(("-- CFWA array["+i+"]="+v+", t="+t).red);
-			if (last_t != NUMTYPE.NAN) { // Check for numeric type repetition only
-				if (t <= last_t) {
-					// Make sure we are not mixing floats with integers
-					if ((last_t >= NUMTYPE.FLOAT32) && (t < NUMTYPE.FLOAT32)) break;
+			// Check for same constructor
+			if (typeof v == "number") {
+
+				// Check for same type
+				var t = getNumType( v );
+				// console.log(("-- CFWA array["+i+"]="+v+", t="+t).red);
+				if (last_t != NUMTYPE.NAN) { // Check for numeric type repetition only
+					if (t <= last_t) {
+						// Make sure we are not mixing floats with integers
+						if ((last_t >= NUMTYPE.FLOAT32) && (t < NUMTYPE.FLOAT32)) break;
+						// We are not breaking
+						break_candidate = false;
+						// Increment up to 255
+						if (++rep_typ == 255) break;
+					}
+				}
+
+			} else if (enableBulkDetection && (last_c != null)) {
+
+				// Check for same constructor
+				if (v instanceof last_c) {
 					// We are not breaking
 					break_candidate = false;
-					// Increment up to 255
-					if (++rep_typ == 255) break;
+					// Increment constructor up to 65535
+					if (++rep_const == 65535) break;
 				}
+
 			}
 
 			// Break if we have a break candidate
@@ -1177,11 +1281,15 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 
 		}
 
-		console.log(("-- CFWA ofs="+start+", rep_typ="+rep_typ+", rep_val="+rep_val).red);
+		// console.log(("-- CFWA ofs="+start+", rep_typ="+rep_typ+", rep_val="+rep_val).red);
 
 		// Return appropriate chunk
-		if ((rep_val == 0) && (rep_typ ==0)) {
-			// Do not use chunks, rather use a single primitive
+		if ((rep_const > 0) && (rep_val == 0)) {
+			// Multiple same constructors are bulked
+			return [ ARR_CHUNK.BULK_OBJ, rep_const+1, const_eid ];
+
+		} else if ((rep_val == 0) && (rep_typ ==0)) {
+			// Do not use chunks, rather use a single primitive for representing zero value
 			return [ ARR_CHUNK.PRIMITIVE, 1, last_t ];
 
 		} else if ((rep_val == 0) && (rep_typ > 0)) {
@@ -1218,7 +1326,7 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 
 			// Write a downscaled array
 			case ARR_OP.DOWNSCALED:
-				encoder.log("ARR", "downscaled, from="+_NUMTYPE[NUMTYPE_DOWNSCALE.FROM[arrType]]+", to="+_NUMTYPE[NUMTYPE_DOWNSCALE.TO_DWS[arrType]]+", len="+data.length);
+				encoder.log(LOG.ARR, "downscaled, from="+_NUMTYPE[NUMTYPE_DOWNSCALE.FROM[arrType]]+", to="+_NUMTYPE[NUMTYPE_DOWNSCALE.TO_DWS[arrType]]+", len="+data.length);
 				pickStream( encoder, arrType, FOR_DWS_TO)
 					.write( packTypedArray( convertArray(data, NUMTYPE_DOWNSCALE.TO_DWS[arrType] ) ) );
 				break;
@@ -1232,7 +1340,7 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 
 				// Floats have also scale
 				if (isFloatType(arrType)) {
-					encoder.log("ARR", "delta, from="+_NUMTYPE[NUMTYPE_DOWNSCALE.FROM[arrType]]+", to="+_NUMTYPE[NUMTYPE_DOWNSCALE.TO_DELTA[arrType]]+", scale="+getFloatDeltaScale(arrType,numAnalysis[2])+", len="+data.length);
+					encoder.log(LOG.ARR, "delta, from="+_NUMTYPE[NUMTYPE_DOWNSCALE.FROM[arrType]]+", to="+_NUMTYPE[NUMTYPE_DOWNSCALE.TO_DELTA[arrType]]+", scale="+getFloatDeltaScale(arrType,numAnalysis[2])+", len="+data.length);
 					pickStream( encoder, arrType, FOR_DELTA_TO)
 						.write( packTypedArray( 
 							deltaEncodeFloats(
@@ -1244,9 +1352,14 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 								))
 						) );
 				} else {
-					encoder.log("ARR", "delta, from="+_NUMTYPE[NUMTYPE_DOWNSCALE.FROM[arrType]]+", to="+_NUMTYPE[NUMTYPE_DOWNSCALE.TO_DELTA[arrType]]+", len="+data.length);
+					encoder.log(LOG.ARR, "delta, from="+_NUMTYPE[NUMTYPE_DOWNSCALE.FROM[arrType]]+", to="+_NUMTYPE[NUMTYPE_DOWNSCALE.TO_DELTA[arrType]]+", len="+data.length);
 					pickStream( encoder, arrType, FOR_DELTA_TO)
-						.write( packTypedArray( deltaEncodeIntegers(data) ) );
+						.write( packTypedArray( 
+							deltaEncodeIntegers(
+								data,
+								NUMTYPE_CLASS[arrType]
+								) 
+						) );
 				}
 				break;
 
@@ -1254,7 +1367,7 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 			case ARR_OP.REPEATED:
 
 				// Write first element
-				encoder.log("ARR", "repeated, type="+_NUMTYPE[arrType]+", value="+data[0]+", len="+data.length);
+				encoder.log(LOG.ARR, "repeated, type="+_NUMTYPE[arrType]+", value="+data[0]+", len="+data.length);
 				pickStream( encoder, arrType )
 					.write( packByNumType[arrType]( data[0] ) );
 				break;
@@ -1263,7 +1376,7 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 			case ARR_OP.RAW:
 
 				// Write first element
-				encoder.log("ARR", "raw, type="+_NUMTYPE[arrType]+", len="+data.length);
+				encoder.log(LOG.ARR, "raw, type="+_NUMTYPE[arrType]+", len="+data.length);
 				pickStream( encoder, arrType )
 					.write( packTypedArray( convertArray(data, arrType) ) );
 				break;
@@ -1272,7 +1385,7 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 			case ARR_OP.SHORT:
 
 				// Write index
-				encoder.log("ARR", "short, type="+_NUMTYPE[arrType]+", len="+data.length+", data="+data);
+				encoder.log(LOG.ARR, "short, type="+_NUMTYPE[arrType]+", len="+data.length+", data="+data);
 				pickStream( encoder, arrType )
 					.write( packTypedArray( convertArray(data, arrType) ) );
 				break;
@@ -1285,14 +1398,49 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 	}
 
 	/**
+	 * Encode a bulk of entities by weaving their properties
+	 */
+	function encodeBulkArray( encoder, entities, eid ) {
+		var PROPERTIES = encoder.objectTable.PROPERTIES[eid],
+			weaveArrays = [];
+
+		// Write entity ID
+		encoder.stream16.write( pack2b( eid, true ) );
+
+		// Write bulked properties
+		for (var i=0, pl=PROPERTIES.length; i<pl; i++) {
+
+			// Read property of all entities
+			var prop = [], p = PROPERTIES[i];
+			for (var j=0, el=entities.length; j<el; j++) {
+				prop.push( entities[j][p] );
+			}
+
+			// Write optimised properties of all entities
+			encodeArray( encoder, prop );
+
+			// // Read property of all entities
+			// var p = PROPERTIES[i];
+			// for (var j=0, el=entities.length; j<el; j++) {
+			// 	weaveArrays.push( entities[j][p] );
+			// }
+
+		}
+
+		// encodeArray( encoder, weaveArrays );
+
+	}
+
+	/**
 	 * Encode the specified array
 	 */
 	function encodeArray( encoder, data ) {
 
 		// Check for empty array
 		if (data.length == 0) {
-			encoder.log("ARR", "empty");
+			encoder.log(LOG.ARR, "empty");
 			encoder.stream8.write( pack1b( ARR_OP.EMPTY ) );
+			encoder.counters.op_prm+=1;
 			return;
 		}
 
@@ -1311,7 +1459,7 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 
 		// If not numeric, process array in chunks of up to 255 items
 		// that share a characteristic
-		encoder.log("ARR", "primitive, len="+data.length+", [");
+		encoder.log(LOG.ARR, "primitive, len="+data.length+", [");
 		encoder.logIndent(1);
 
 		// Write header & array
@@ -1319,47 +1467,73 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 
 		// Write chunks with forward analysis
 		for (var i=0, llen=data.length; i<llen;) {
-			encoder.log("---", "Item "+i);
 
 			// Forward chunk analysis
-			var chunk = chunkForwardAnalysis( data, i ),
-				chunkType = chunk[0], chunkSize = chunk[1], chunkNumType = chunk[2];
+			var chunk = chunkForwardAnalysis( encoder, data, i, false ),
+				chunkType = chunk[0], chunkSize = chunk[1], chunkSubType = chunk[2];
 
 			// Handle chunk data
 			switch (chunkType) {
 				case ARR_CHUNK.REPEAT:
 
 					// Write header
+					encoder.log(LOG.CHU, "repeated x"+chunkSize);
 					encoder.stream8.write( pack1b( ARR_OP.PRIM_FLAG | ARR_CHUNK.REPEAT ) );
 					encoder.stream8.write( pack1b( chunkSize ) );
+					encoder.counters.arr_chu+=2;
 
 					// Write the repeated primitive
-					encoder.log("CHU", "repeated x"+chunkSize);
 					encodePrimitive( encoder, data[i] );
 					break;
 
 				case ARR_CHUNK.NUMERIC:
 
 					// Write header
-					console.log(">>> NUM INDICATOR");
+					encoder.log(LOG.CHU, "numeric x"+chunkSize+", type="+_NUMTYPE[chunkSubType]);
 					encoder.stream8.write( pack1b( ARR_OP.PRIM_FLAG | ARR_CHUNK.NUMERIC ) );
-					console.log("<<<");
+					encoder.counters.arr_chu+=1;
 
 					// Write the numeric array
-					encoder.log("CHU", "numeric x"+chunkSize+", type="+_NUMTYPE[chunkNumType]);
 					if (!encodeNumArray(encoder, data.slice(i, i+chunkSize))) {
 						throw {
 							'name' 		: 'AssertError',
 							'message'	: 'Forward analysis reported numeric chunk but numeric encoding failed! Data:'+util.inspect(data.slice(i, i+chunkSize)),
 							toString 	: function(){return this.name + ": " + this.message;}
 						}
-					}
+					}					
+					break;
+
+				case ARR_CHUNK.BULK_OBJ:
+
+					// Write header
+					encoder.log(LOG.CHU, "bulk x"+chunkSize+", eid="+chunkSubType);
+					encoder.stream8.write( pack1b( ARR_OP.PRIM_FLAG | ARR_CHUNK.BULK_OBJ ) );
+					encoder.stream16.write( pack2b( chunkSize, false ) );
+					encoder.counters.arr_chu+=3;
+
+					// Encode bulk chunk
+					encodeBulkArray( encoder, data.slice(i, i+chunkSize), chunkSubType );
+
+					break;
+
+				case ARR_CHUNK.PRIM_IREF:
+
+					// Write the iref
+					encoder.log(LOG.CHU, "iref x"+chunkSize+", id="+chunkSubType);
+					encodeIREF( encoder, chunkSubType );
+					break;
+
+				case ARR_CHUNK.PRIM_XREF:
+
+					// Write the iref
+					encoder.log(LOG.CHU, "xref x"+chunkSize+", id="+chunkSubType);
+					encodeXREF( encoder, chunkSubType );
 					break;
 
 				case ARR_CHUNK.PRIMITIVE:
 
 					// Write the actual primitive
-					encoder.log("CHU", "primitive x"+chunkSize);
+					encoder.log(LOG.CHU, "primitive x"+chunkSize);
 					encodePrimitive( encoder, data[i] );
 					break;
 
@@ -1371,7 +1545,7 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 		}
 
 		encoder.logIndent(-1);
-		encoder.log("ARR", "]");
+		encoder.log(LOG.ARR, "]");
 
 	}
 
@@ -1384,12 +1558,15 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 		if (buffer.length < 256) {
 			encoder.stream8.write( pack1b( PRIM_OP.BUFFER | buffer_type | 0x00 ) );
 			encoder.stream8.write( pack1b( buffer.length ) );
+			encoder.counters.dat_hdr+=2;
 		} else if (buffer.length < 65536) {
 			encoder.stream8.write( pack1b( PRIM_OP.BUFFER | buffer_type | 0x08 ) );
 			encoder.stream16.write( pack2b( buffer.length ) );
+			encoder.counters.dat_hdr+=3;
 		} else if (buffer.length < 4294967296) {
 			encoder.stream8.write( pack1b( PRIM_OP.BUFFER | buffer_type | 0x10 ) );
 			encoder.stream32.write( pack4b( buffer.length ) );
+			encoder.counters.dat_hdr+=5;
 		} else {
 			// 4 Gigs? Are you serious? Of course we can fit it in a Float64, but WHY?
 			throw {
@@ -1400,8 +1577,10 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 		}
 
 		// Write MIME Type (from string lookup table)
-		if (mime_type != null)
+		if (mime_type != null) {
 			encoder.stream16.write( pack2b( mime_type ) );
+			encoder.counters.dat_hdr+=2;
+		}
 
 		// Write buffer
 		encoder.stream8.write( packTypedArray(buffer) );
@@ -1418,6 +1597,7 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 			buffer = bufferFromFile( filename );
 
 		// Write buffer header
+		encoder.log(LOG.EMB,"file='"+filename+"', mime="+mime+", len="+buffer.length);
 		encodeBuffer( encoder, buffer_type, mime_id, buffer );
 
 	}
@@ -1443,10 +1623,12 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 			buf = new ArrayBuffer(str.length*2); // 2 bytes for each char
 			bufView = new Uint16Array(buf);
 			bufType = PRIM_BUFFER_TYPE.STRING_UTF8;
+			encoder.log(LOG.STR,"string='"+str+"', encoding=utf-8, len="+str.length);
 		} else {
 			buf = new ArrayBuffer(str.length); // 1 byte for each char
 			bufView = new Uint8Array(buf);
 			bufType = PRIM_BUFFER_TYPE.STRING_LATIN;
+			encoder.log(LOG.STR,"string='"+str+"', encoding=latin, len="+str.length);
 		}
 
 		// Copy into buffer
@@ -1467,9 +1649,10 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 			lo = (id & 0xFFFF)
 
 		// Write opcode splitted inti 8-bit and 16-bit 
-		encoder.log("IRF", "iref="+id);
+		encoder.log(LOG.IREF, "iref="+id);
 		encoder.stream8.write( pack1b( PRIM_OP.REF | hi, false ) );
 		encoder.stream16.write( pack2b( lo, false ) );
+		encoder.counters.op_iref+=3;
 
 	}
 
@@ -1479,9 +1662,10 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 	function encodeXREF( encoder, id ) {
 
 		// Write opcode for 16-bit lookup 
-		encoder.log("XRF", "xref="+id+" [" + encoder.stringLookup[id] + "]")
+		encoder.log(LOG.XREF, "xref="+id+" [" + encoder.stringLookup[id] + "]")
 		encoder.stream8.write( pack1b( PRIM_OP.IMPORT, false ) );
 		encoder.stream16.write( pack2b( id, false ) );
+		encoder.counters.op_xref+=3;
 
 	}
 
@@ -1531,7 +1715,7 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 			{ encodeIREF( encoder, id ); return; }
 
 		// Keep this object for internal cross-refferencing
-		encoder.log("OBJ","eid="+eid+", properties="+propertyTable.length);
+		encoder.log(LOG.OBJ,"eid="+eid+", properties="+propertyTable.length);
 		encoder.keepIRef( object, propertyTable, eid );
 
 		// Check if we should use 13-bit or 5-bit index
@@ -1539,6 +1723,7 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 
 			// Write entity opcode
 			encoder.stream8.write( pack1b( PRIM_OP.OBJECT | eid ) );
+			encoder.counters.op_prm+=1;
 
 		} else {
 
@@ -1549,6 +1734,7 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 			// Write entity
 			encoder.stream8.write( pack1b( PRIM_OP.OBJECT | eid_hi | 0x10 ) );
 			encoder.stream8.write( pack1b( eid_lo ) );
+			encoder.counters.op_prm+=2;
 
 		}
 
@@ -1575,6 +1761,7 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 
 			// Write entity opcode
 			encoder.stream8.write( pack1b( PRIM_OP.OBJECT | 0x30 ) );
+			encoder.counters.op_prm+=1;
 
 			// Write values
 			var values = [];
@@ -1584,16 +1771,18 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 			// Write key IDs
 			for (var i=0, len=o_keys.length; i<len; i++)
 				encoder.stream16.write( pack2b( encoder.stringID(o_keys[i]) ) );
+			encoder.counters.ref_str += o_keys.length * 2;
 
 		} else {
 
 			// Split entity ID in a 12-bit number
 			var sid_hi = (sid & 0xF00) >> 8,
-				sid_lo = sid & 0xFF;
+				sid_lo =  sid & 0xFF;
 
 			// We have a known entity ID, re-use it				
 			encoder.stream8.write( pack1b( PRIM_OP.OBJECT | 0x20 | sid_hi ) );
 			encoder.stream8.write( pack1b( sid_lo ) );
+			encoder.counters.op_prm+=2;
 
 			// Write values
 			var values = [];
@@ -1616,26 +1805,30 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 		if (data === false) {
 
 			// Write simple primitive
-			encoder.log("PRM", "simple[false]");
+			encoder.log(LOG.PRM, "simple[false]");
 			encoder.stream8.write( pack1b( PRIM_OP.SIMPLE | PRIM_SIMPLE.FALSE ) );
+			encoder.counters.op_prm+=1;
 
 		} else if (data === true) {
 
 			// Write simple primitive
-			encoder.log("PRM", "simple[true]");
+			encoder.log(LOG.PRM, "simple[true]");
 			encoder.stream8.write( pack1b( PRIM_OP.SIMPLE | PRIM_SIMPLE.TRUE ) );
+			encoder.counters.op_prm+=1;
 
 		} else if (data === undefined) {
 
 			// Write simple primitive
-			encoder.log("PRM", "simple[undefined]");
+			encoder.log(LOG.PRM, "simple[undefined]");
 			encoder.stream8.write( pack1b( PRIM_OP.SIMPLE | PRIM_SIMPLE.UNDEFINED ) );
+			encoder.counters.op_prm+=1;
 
 		} else if (data === null) {
 
 			// Write simple primitive
-			encoder.log("PRM", "simple[null]");
+			encoder.log(LOG.PRM, "simple[null]");
 			encoder.stream8.write( pack1b( PRIM_OP.SIMPLE | PRIM_SIMPLE.NULL ) );
+			encoder.counters.op_prm+=1;
 
 		// ===============================
 		//  Number
@@ -1646,8 +1839,9 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 			if (isNaN(data)) {
 
 				// Write extended simple primitive
-				encoder.log("PRM", "simple[NaN]");
+				encoder.log(LOG.PRM, "simple[NaN]");
 				encoder.stream8.write( pack1b( PRIM_OP.SIMPLE_EX | PRIM_SIMPLE_EX.NAN ));
+				encoder.counters.op_prm+=1;
 
 			} else {
 
@@ -1662,8 +1856,9 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 				}
 
 				// Write header
-				encoder.log("PRM", "number, type="+_NUMTYPE[numType]+", n="+data);
+				encoder.log(LOG.PRM, "number, type="+_NUMTYPE[numType]+", n="+data);
 				encoder.stream8.write( pack1b( PRIM_OP.NUMBER | numType ) );
+				encoder.counters.op_prm+=1;
 
 				// Write data
 				pickStream( encoder, numType )
@@ -1682,7 +1877,7 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 					(data instanceof Array)) {
 
 			// Write array
-			encoder.log("PRM", "array, len="+data.length+", peek="+data[0]);
+			encoder.log(LOG.PRM, "array, len="+data.length+", peek="+data[0]);
 			encodeArray( encoder, data );
 
 		// ===============================
@@ -1692,25 +1887,25 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 		} else if (typeof data == "string") {
 
 			// Write a string buffer primitive
-			encoder.log("PRM", "buffer[string], len="+data.length);
+			encoder.log(LOG.PRM, "buffer[string], len="+data.length);
 			encodeStringBuffer( encoder, data );
 
 		} else if (data instanceof FileResource) {
 
 			// Embed file resource
-			encoder.log("PRM", "buffer[resource], file="+data.src+", mime="+data.mime);
+			encoder.log(LOG.PRM, "buffer[resource], file="+data.src+", mime="+data.mime);
 			encodeEmbeddedFileBuffer( encoder, PRIM_BUFFER_TYPE.RESOURCE, data.src, data.mime );
 
 		} else if (data instanceof ImageElement) {
 
 			// Create a buffer from image
-			encoder.log("PRM", "buffer[image], file="+data.src);
+			encoder.log(LOG.PRM, "buffer[image], file="+data.src);
 			encodeEmbeddedFileBuffer( encoder, PRIM_BUFFER_TYPE.BUF_IMAGE, data.src );
 
 		} else if (data instanceof ScriptElement) {
 
 			// Create a buffer from image
-			encoder.log("PRM", "buffer[script], file="+data.src);
+			encoder.log(LOG.PRM, "buffer[script], file="+data.src);
 			encodeEmbeddedFileBuffer( encoder, PRIM_BUFFER_TYPE.BUF_SCRIPT, data.src );
 
 		// ===============================
@@ -1720,13 +1915,13 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 		} else if (data.constructor === ({}).constructor) {
 
 			// Encode plain object
-			encoder.log("PRM", "object[plain]");
+			encoder.log(LOG.PRM, "object[plain]");
 			encodePlainObject( encoder, data );
 
 		} else {
 
 			// Encode object
-			encoder.log("PRM", "object[entity]");
+			encoder.log(LOG.PRM, "object[entity]");
 			encodeObject( encoder, data );
 
 		}
@@ -1761,10 +1956,22 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 		// Open parallel streams in order to avoid memory exhaustion.
 		// The final file is assembled from these chunks
 		this.filename = filename;
-		this.stream64 = new BinaryStream( filename + '_b64.tmp', 8 );
-		this.stream32 = new BinaryStream( filename + '_b32.tmp', 4 );
-		this.stream16 = new BinaryStream( filename + '_b16.tmp', 2 );
-		this.stream8  = new BinaryStream( filename + '_b8.tmp', 1 );
+		this.stream64 = new BinaryStream( filename + '_b64.tmp', 8, false );
+		this.stream32 = new BinaryStream( filename + '_b32.tmp', 4, false );
+		this.stream16 = new BinaryStream( filename + '_b16.tmp', 2, false );
+		this.stream8  = new BinaryStream( filename + '_b8.tmp' , 1, false );
+
+		// Counters for optimising the protocol
+		this.counters = {
+			op_ctr: 0,
+			op_prm: 0,
+			ref_str: 0,
+			arr_hdr: 0,
+			arr_chu: 0,
+			dat_hdr: 0,
+			op_iref: 0,
+			op_xref: 0,
+		};
 
 		// Keep rest of configuration
 		this.config = config || {};
@@ -1805,6 +2012,7 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 
 		// Debug
 		this.logPrefix = "";
+		this.logFlags = 0x00;
 
 	}
 
@@ -1826,7 +2034,7 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 		'close': function() {
 
 			// Finalize individual streams
-			console.info("Sealing bundle");
+			console.info("Finalising bundle");
 			this.stream64.finalize();
 			this.stream32.finalize();
 			this.stream16.finalize();
@@ -1834,8 +2042,8 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 
 			// Open final stream
 			var finalStream = new BinaryStream( this.filename, 8 );
-			finalStream.write( pack2b( 0x4233 ) ); // Magic
-			finalStream.write( pack2b( 0x0000 ) ); // Reserved
+			finalStream.write( pack2b( 0x4233 ) );  				 // Magic header
+			finalStream.write( pack2b( this.objectTable ) ); 		 // Object Table ID
 			finalStream.write( pack4b( this.stream64.offset ) );     // 64-bit buffer lenght
 			finalStream.write( pack4b( this.stream32.offset ) );     // 32-bit buffer lenght
 			finalStream.write( pack4b( this.stream16.offset ) );     // 16-bit buffer length
@@ -1858,11 +2066,32 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 			finalStream.finalize();
 			finalStream.close();
 
-			// Close and delete helper stream objects
-			// this.stream8.close();  fs.unlink( this.filename + '_b8.tmp' );
-			// this.stream16.close(); fs.unlink( this.filename + '_b16.tmp' );
-			// this.stream32.close(); fs.unlink( this.filename + '_b32.tmp' );
-			// this.stream64.close(); fs.unlink( this.filename + '_b64.tmp' );
+			// Close and delete helper stream files
+			this.stream8.close();  fs.unlink( this.filename + '_b8.tmp' );
+			this.stream16.close(); fs.unlink( this.filename + '_b16.tmp' );
+			this.stream32.close(); fs.unlink( this.filename + '_b32.tmp' );
+			this.stream64.close(); fs.unlink( this.filename + '_b64.tmp' );
+
+			// Write protocol overhead table
+			if (this.logFlags & LOG.PDBG != 0) {
+				console.info("-----------------------------------");
+				console.info(" Binary Protocol Overhead Analysis");
+				console.info("-----------------------------------");
+				console.info(" Control Op-Codes   : ", this.counters.op_ctr);
+				console.info(" Primitive Op-Codes : ", this.counters.op_prm);
+				console.info(" String References  : ", this.counters.ref_str);
+				console.info(" I-Refs             : ", this.counters.op_iref);
+				console.info(" X-Refs             : ", this.counters.op_xref);
+				console.info(" Array Headers      : ", this.counters.arr_hdr);
+				console.info(" Array Chunks       : ", this.counters.arr_chu);
+				console.info(" Buffer Headers     : ", this.counters.dat_hdr);
+				var sum = this.counters.op_ctr + this.counters.op_prm +
+						  this.counters.ref_str + this.counters.op_iref + this.counters.op_xref +
+						  this.counters.arr_hdr + this.counters.arr_chu + this.counters.dat_hdr;
+				console.info("-----------------------------------");
+				var perc = ((sum / finalStream.offset) * 100).toFixed(2);
+				console.info(" Total Overhead     : ",sum," ("+perc+" %)");
+			}
 
 		},
 
@@ -1980,8 +2209,10 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 
 			// Write control operation
 			this.stream8.write( pack1b( CTRL_OP.EXPORT ) );
+			this.counters.op_ctr++;
 			// Write string ID from the string lookup table
 			this.stream16.write( pack2b( this.stringID(name) ) );
+			this.counters.ref_str+=2;
 
 			// Encode primitive
 			encodePrimitive( this, entity );
@@ -2006,8 +2237,10 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 	
 			// Write control operation
 			this.stream8.write( pack1b( CTRL_OP.EMBED ) );
+			this.counters.op_ctr++;
 			// Write string ID from the string lookup table
 			this.stream16.write( pack2b( this.stringID(relPath) ) );
+			this.counters.ref_str+=2;
 			// Encode primitive
 			encodePrimitive( this, new FileResource( filename, mime_type) );
 			
@@ -2017,8 +2250,27 @@ define(["three", "binary-search-tree", "fs", "util", "mock-browser", "colors", "
 		 * Logging function
 		 */
 		'log': function(subsystem, text) {
-			// return;
-			console.log(subsystem.blue + (" @"+this.stream8.offset).bold.blue + ":" + this.logPrefix + " " + text );
+
+			// Don't log subsystems we don't track
+			if (subsystem & this.logFlags == 0) return;
+
+			// Visual translation of subsystem flag
+			var ss_flag = {
+				0x0001 	: 'PRM' ,
+				0x0002 	: 'ARR' ,
+				0x0004 	: 'CHU' ,
+				0x0008 	: 'STR' ,
+				0x0010 	: 'IREF',
+				0x0020 	: 'XREF',
+				0x0040 	: 'PRM' ,
+				0x0080 	: 'OBJ' ,
+				0x0100	: 'EMB' ,
+				0x8000 	: 'DBG' ,
+			};
+
+			// Log
+			console.log(ss_flag[subsystem].blue + (" @"+this.stream8.offset).bold.blue + ":" + this.logPrefix + " " + text );
+
 		},
 
 		/**

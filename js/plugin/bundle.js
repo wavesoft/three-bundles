@@ -14,7 +14,7 @@ define(["three",
 
 	// Some widely used texture loaders
 	THREE.Loader.Handlers.add( /\.dds$/i, new THREE.DDSLoader() );
-	THREE.Loader.Handlers.add( /\.(jpg|jpeg|gif|png|bmp)$/i, new THREE.ImageLoader() );
+	// THREE.Loader.Handlers.add( /\.(jpg|jpeg|gif|png|bmp)$/i, new THREE.ImageLoader() );
 
 	// Loader instance singletons
 	var loaderInstances = { },
@@ -73,7 +73,7 @@ define(["three",
 			// the resources this bundle contains. Upon loading a bundle,
 			// all of it's resources will be pre-cached.
 			//
-			req([ baseURL + '/index' ], function(index) {
+			req([ baseURL + '/index.js' ], function(index) {
 
 				// Check if there 
 				if (index.load == undefined)
